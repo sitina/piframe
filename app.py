@@ -7,7 +7,6 @@ the user has access to.
 from __future__ import print_function
 from flask import Flask
 from flask import render_template
-from markupsafe import escape
 
 import os
 import pickle
@@ -36,20 +35,19 @@ google_photos = build('photoslibrary', 'v1', credentials = creds)
 
 app = Flask(__name__)
 
+
 def get_albums():
     # list albums
+    albums = []
     nextpagetoken = 'Dummy'
     while nextpagetoken != '':
         nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
-        results = google_photos.albums().list(body={
-            "pageSize": 100,
-            "pageToken": nextpagetoken
-            }).execute()
+        results = google_photos.albums().list(pageSize=50, pageToken = nextpagetoken).execute()
         items = results.get('albums', [])
-        pictures.extend(list(filter(is_picture, items)))
+        albums.extend(items)
         nextpagetoken = results.get('nextPageToken', '')
 
-    print(albums)
+    # print(albums)
     return albums
 
 
@@ -57,12 +55,6 @@ def is_picture(value):
     return 'photo' in value['mediaMetadata']
 
 def get_random_picture():
-    # Kubík a Matěj
-    album_id = "AF4UkVjDboszJfpJIRxepCPnE2WZAxSKN15f2eiFi9CN03YseF_4uqNoOdfPc-vuoZUy_prehi3v"
-
-    # Kubík kalendář
-    album_id = "AF4UkVgrk8deRyQFBt-kjAqNbjHDNOIqNN9KtzQTE7XoLTJChJLniUtJON8PY8z06j0tFXi3cUzd"
-
     # Fotorámeček
     album_id = "AF4UkVii43j_DjJwWvR-pJsQBNdK-Tgr-Qo4Xy4IevSyDLEU8dXLOzZwc0qfKNWcCuhxfXPStRqo"
 
@@ -105,30 +97,29 @@ def hello_world():
     return get_picture()
 
 
-@app.route("/<name>")
-def hello(name):
-    return f"Hello, {escape(name)}!"
-
-
 @app.route("/albums")
 def albums_list():
     albums = get_albums()
-    return f"Hello, {escape('name')}!"
+    albums_list = []
+    for album in albums:
+        albums_list.append(album['title'] + ' / ' + album['id'])
+
+    return render_template('albums.html', list=albums_list)
 
 
 @app.route("/picture")
 def get_picture():
     picture = get_random_picture()
-    creationTime = datetime.strptime(picture['mediaMetadata']['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
-    creationTimeString = creationTime.strftime("%d.%m.%Y, %H:%M:%S")
-    cameraMake = picture['mediaMetadata']['photo'].get('cameraMake', '')
-    cameraModel = picture['mediaMetadata']['photo'].get('cameraModel', '')
+    creation_time = datetime.strptime(picture['mediaMetadata']['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
+    creation_time_string = creation_time.strftime("%d.%m.%Y, %H:%M:%S")
+    camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
+    camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
 
     return render_template(
         'picture.html',
         picture = picture['baseUrl'] + '=w4096-h2048',
-        creationTime = creationTimeString,
-        cameraMake = cameraMake,
-        cameraModel = cameraModel,
+        creationTime = creation_time_string,
+        cameraMake = camera_make,
+        cameraModel = camera_model,
         filename = picture['filename']
         )
