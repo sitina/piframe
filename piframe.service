@@ -1,0 +1,11 @@
+[Unit]
+Description=piframe service
+After=network.target
+
+[Service]
+WorkingDirectory=/home/pi/piframe/
+ExecStart=start.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
