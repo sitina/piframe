@@ -90,8 +90,6 @@ def get_random_picture():
     return picture
 
 
-get_random_picture()
-
 @app.route("/")
 def hello_world():
     return get_picture()
