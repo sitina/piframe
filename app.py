@@ -11,16 +11,12 @@ from markupsafe import escape
 
 import os
 import pickle
-import json
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 import google_auth_httplib2  # This gotta be installed for build() to work
-from statistics import mean
 import random
-# import matplotlib.pyplot as plt
-# import numpy as np
-# %matplotlib inline
+from datetime import datetime
 
 # Setup the Photo v1 API
 SCOPES = ['https://www.googleapis.com/auth/photoslibrary.readonly']
@@ -36,45 +32,25 @@ if not creds or not creds.valid:
         creds = flow.run_local_server(port = 0)
     with open("token.pickle", "wb") as tokenFile:
         pickle.dump(creds, tokenFile)
-service = build('photoslibrary', 'v1', credentials = creds)
-
 google_photos = build('photoslibrary', 'v1', credentials = creds)
-
 
 app = Flask(__name__)
 
-
-def get_random_picture2():
-    day, month, year = ('27', '12', '2021')
-    # Day or month may be 0 => full month resp. year
-    date_filter = [{"day": day, "month": month, "year": year}]
-    # No leading zeroes for day an month!
+def get_albums():
+    # list albums
     nextpagetoken = 'Dummy'
-    focalLengths = []
-    baseUrls = []
     while nextpagetoken != '':
         nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
-        results = google_photos.mediaItems().search(
-                body={ "filters":  {"dateFilter": {"dates": [{"day": day, "month": month, "year": year}]}},
-                      "pageSize": 100, "pageToken": nextpagetoken}).execute()
-        # The default number of media items to return at a time is 25. The maximum pageSize is 100.
-        items = results.get('mediaItems', [])
+        results = google_photos.albums().list(body={
+            "pageSize": 100,
+            "pageToken": nextpagetoken
+            }).execute()
+        items = results.get('albums', [])
+        pictures.extend(list(filter(is_picture, items)))
         nextpagetoken = results.get('nextPageToken', '')
-        for item in items:
-            if ('photo' in item['mediaMetadata']):
-                if ('cameraMake' in item['mediaMetadata']['photo'] and item['mediaMetadata']['photo']['cameraMake'] == 'FUJIFILM'):
-                    # print('{0}'.format(item['mediaMetadata']['photo']))
-                    if ('focalLength' in item['mediaMetadata']['photo']):
-                        print('{0}'.format(item['mediaMetadata']['photo']['focalLength']))
-                        print(item)
-                        print(item['baseUrl'])
-                        baseUrls.append(item['baseUrl'])
-                        focalLengths.append(item['mediaMetadata']['photo']['focalLength'])
-                    else:
-                        print('-')
 
-    print(focalLengths)
-    print(mean(focalLengths))
+    print(albums)
+    return albums
 
 
 def is_picture(value):
@@ -98,18 +74,27 @@ def get_random_picture():
     # album = google_photos.albums().get(albumId = album_id).execute()
     # print(album)
 
-    results = google_photos.mediaItems().search(
-            body={ "albumId": album_id, "pageSize": 100}).execute()
-    items = results.get('mediaItems', [])
-    pictures = list(filter(is_picture, items))
+    pictures = []
+    nextpagetoken = 'Dummy'
+    while nextpagetoken != '':
+        nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
+        results = google_photos.mediaItems().search(
+            body={
+                "albumId": album_id,
+                "pageSize": 100,
+                "pageToken": nextpagetoken
+                }).execute()
+        items = results.get('mediaItems', [])
+        pictures.extend(list(filter(is_picture, items)))
+        nextpagetoken = results.get('nextPageToken', '')
+
     picture = random.choice(pictures)
 
-    # print('*-**********')
-    # print(items)
-    # print('*-**********')
-    # print(pictures)
-    # print('*-**********')
-    print(picture)
+    # print(picture)
+    print(picture['mediaMetadata']['creationTime'])
+    print(picture['mediaMetadata']['photo'].get('cameraMake', ''))
+    print(picture['mediaMetadata']['photo'].get('cameraModel', ''))
+    print(picture['filename'])
     return picture
 
 
@@ -117,7 +102,7 @@ get_random_picture()
 
 @app.route("/")
 def hello_world():
-    return "<p>Hello, World!</p>"
+    return get_picture()
 
 
 @app.route("/<name>")
@@ -125,8 +110,25 @@ def hello(name):
     return f"Hello, {escape(name)}!"
 
 
+@app.route("/albums")
+def albums_list():
+    albums = get_albums()
+    return f"Hello, {escape('name')}!"
+
+
 @app.route("/picture")
 def get_picture():
     picture = get_random_picture()
-    return render_template('picture.html', picture=picture['baseUrl'] + '=w4096-h2048')
-    # return f"Hello, {escape(focalLengths)}, {escape(baseUrls)}!"
+    creationTime = datetime.strptime(picture['mediaMetadata']['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
+    creationTimeString = creationTime.strftime("%d.%m.%Y, %H:%M:%S")
+    cameraMake = picture['mediaMetadata']['photo'].get('cameraMake', '')
+    cameraModel = picture['mediaMetadata']['photo'].get('cameraModel', '')
+
+    return render_template(
+        'picture.html',
+        picture = picture['baseUrl'] + '=w4096-h2048',
+        creationTime = creationTimeString,
+        cameraMake = cameraMake,
+        cameraModel = cameraModel,
+        filename = picture['filename']
+        )
