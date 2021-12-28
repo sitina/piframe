@@ -81,11 +81,15 @@ def is_picture(value):
     return 'photo' in value['mediaMetadata']
 
 def get_random_picture():
+    # Kubík a Matěj
     album_id = "AF4UkVjDboszJfpJIRxepCPnE2WZAxSKN15f2eiFi9CN03YseF_4uqNoOdfPc-vuoZUy_prehi3v"
+
+    # Kubík kalendář
+    album_id = "AF4UkVgrk8deRyQFBt-kjAqNbjHDNOIqNN9KtzQTE7XoLTJChJLniUtJON8PY8z06j0tFXi3cUzd"
 
     # list albums
     # albums = google_photos.albums().list().execute()
-    #print(albums)
+    # print(albums)
 
     # get album details
     # album = google_photos.albums().get(albumId = album_id).execute()
@@ -97,11 +101,11 @@ def get_random_picture():
     pictures = list(filter(is_picture, items))
     picture = random.choice(pictures)
 
-    print('*-**********')
-    print(items)
-    print('*-**********')
-    print(pictures)
-    print('*-**********')
+    # print('*-**********')
+    # print(items)
+    # print('*-**********')
+    # print(pictures)
+    # print('*-**********')
     print(picture)
     return picture
 
