@@ -6,6 +6,7 @@ the user has access to.
 """
 from __future__ import print_function
 from flask import Flask
+from flask import render_template
 from markupsafe import escape
 
 import os
@@ -16,6 +17,7 @@ from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
 import google_auth_httplib2  # This gotta be installed for build() to work
 from statistics import mean
+import random
 # import matplotlib.pyplot as plt
 # import numpy as np
 # %matplotlib inline
@@ -42,20 +44,11 @@ google_photos = build('photoslibrary', 'v1', credentials = creds)
 app = Flask(__name__)
 
 
-@app.route("/")
-def hello_world():
-    return "<p>Hello, World!</p>"
-
-
-@app.route("/<name>")
-def hello(name):
-    return f"Hello, {escape(name)}!"
-
-
-@app.route("/picture")
-def get_picture():
-    day, month, year = ('27', '12', '2021')  # Day or month may be 0 => full month resp. year
-    date_filter = [{"day": day, "month": month, "year": year}]  # No leading zeroes for day an month!
+def get_random_picture2():
+    day, month, year = ('27', '12', '2021')
+    # Day or month may be 0 => full month resp. year
+    date_filter = [{"day": day, "month": month, "year": year}]
+    # No leading zeroes for day an month!
     nextpagetoken = 'Dummy'
     focalLengths = []
     baseUrls = []
@@ -82,4 +75,51 @@ def get_picture():
 
     print(focalLengths)
     print(mean(focalLengths))
-    return f"Hello, {escape(focalLengths)}, {escape(baseUrls)}!"
+
+
+def is_picture(value):
+    return 'photo' in value['mediaMetadata']
+
+def get_random_picture():
+    album_id = "AF4UkVjDboszJfpJIRxepCPnE2WZAxSKN15f2eiFi9CN03YseF_4uqNoOdfPc-vuoZUy_prehi3v"
+
+    # list albums
+    # albums = google_photos.albums().list().execute()
+    #print(albums)
+
+    # get album details
+    # album = google_photos.albums().get(albumId = album_id).execute()
+    # print(album)
+
+    results = google_photos.mediaItems().search(
+            body={ "albumId": album_id, "pageSize": 100}).execute()
+    items = results.get('mediaItems', [])
+    pictures = list(filter(is_picture, items))
+    picture = random.choice(pictures)
+
+    print('*-**********')
+    print(items)
+    print('*-**********')
+    print(pictures)
+    print('*-**********')
+    print(picture)
+    return picture
+
+
+get_random_picture()
+
+@app.route("/")
+def hello_world():
+    return "<p>Hello, World!</p>"
+
+
+@app.route("/<name>")
+def hello(name):
+    return f"Hello, {escape(name)}!"
+
+
+@app.route("/picture")
+def get_picture():
+    picture = get_random_picture()
+    return render_template('picture.html', picture=picture['baseUrl'] + '=w4096-h2048')
+    # return f"Hello, {escape(focalLengths)}, {escape(baseUrls)}!"
