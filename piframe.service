@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 WorkingDirectory=/home/pi/piframe/
-ExecStart=start.sh
+ExecStart=/home/pi/piframe/start.sh
 Restart=always
 
 [Install]
