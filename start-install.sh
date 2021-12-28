@@ -3,7 +3,7 @@ set -e
 
 if [ ! -d "venv/" ]; then
   echo "Initialising virtualenv - this is one off"
-  virtualenv -p python3 venv
+  python3 -m venv venv
   echo "virtualenv initialisation done"
 fi
 
