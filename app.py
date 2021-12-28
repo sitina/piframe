@@ -87,6 +87,9 @@ def get_random_picture():
     # Kubík kalendář
     album_id = "AF4UkVgrk8deRyQFBt-kjAqNbjHDNOIqNN9KtzQTE7XoLTJChJLniUtJON8PY8z06j0tFXi3cUzd"
 
+    # Fotorámeček
+    album_id = "AF4UkVii43j_DjJwWvR-pJsQBNdK-Tgr-Qo4Xy4IevSyDLEU8dXLOzZwc0qfKNWcCuhxfXPStRqo"
+
     # list albums
     # albums = google_photos.albums().list().execute()
     # print(albums)
