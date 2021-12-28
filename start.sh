@@ -8,5 +8,5 @@ if [ ! -d "venv/" ]; then
 fi
 
 source venv/bin/activate
-flask run --host=0.0.0.0
+flask run --host=0.0.0.0 --port=81
 deactivate
