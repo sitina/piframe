@@ -3,7 +3,7 @@
   <head>
     <title>Photo frame</title>
     <style>
-      .className {
+      .fullScreenPhoto {
           max-width: 100%;
           max-height: 100%;
           bottom: 0;
@@ -30,56 +30,14 @@
           z-index: 10;
           display: inline-block;
       }
-      /* Safari syntax */
-      :-webkit-full-screen {
-        background-color: #000;
-      }
-
-      /* IE11 */
-      :-ms-fullscreen {
-        background-color: #000;
-      }
-
-      /* Standard syntax */
-      :fullscreen {
-        background-color: #000;
-      }
     </style>
     <meta name=”apple-mobile-web-app-capable” content=”yes”>
-    <meta http-equiv="refresh" content="30">
     <script>
-      var elem = document.documentElement;
-      function openFullscreen() {
-        if (elem.requestFullscreen) {
-          elem.requestFullscreen();
-        } else if (elem.webkitRequestFullscreen) { /* Safari */
-          elem.webkitRequestFullscreen();
-        } else if (elem.msRequestFullscreen) { /* IE11 */
-          elem.msRequestFullscreen();
-        }
-      }
-
-      function closeFullscreen() {
-        if (document.exitFullscreen) {
-          document.exitFullscreen();
-        } else if (document.webkitExitFullscreen) { /* Safari */
-          document.webkitExitFullscreen();
-        } else if (document.msExitFullscreen) { /* IE11 */
-          document.msExitFullscreen();
-        }
-      }
-
-      window.addEventListener("load", function(){
-        openFullscreen();
-      });
     </script>
   </head>
-  <body onload="openFullscreen();">
-    <img src="{{picture}}" class="className" />
+  <body>
+    <img src="{{picture}}" class="fullScreenPhoto" />
     <div class="infoFrame">
-      <!-- <button onclick="openFullscreen();">Open Fullscreen</button>
-      <button onclick="closeFullscreen();">Close Fullscreen</button>
-      <br /> -->
       {{creationTime}}<br />
       {{filename}} / {{cameraMake}} {{cameraModel}}
     </div>

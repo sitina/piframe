@@ -91,8 +91,8 @@ def get_random_picture():
 
 
 @app.route("/")
-def hello_world():
-    return get_picture()
+def home():
+    return get_fullscreen()
 
 
 @app.route("/albums")
@@ -108,7 +108,8 @@ def albums_list():
 @app.route("/picture")
 def get_picture():
     picture = get_random_picture()
-    creation_time = datetime.strptime(picture['mediaMetadata']['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
+    creation_time = datetime.strptime(
+        picture['mediaMetadata']['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
     creation_time_string = creation_time.strftime("%d.%m.%Y, %H:%M:%S")
     camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
     camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
@@ -121,3 +122,8 @@ def get_picture():
         cameraModel = camera_model,
         filename = picture['filename']
         )
+
+
+@app.route("/fullscreen")
+def get_fullscreen():
+    return render_template('fullscreen.html')
