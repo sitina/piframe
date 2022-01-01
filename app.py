@@ -16,6 +16,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 import google_auth_httplib2  # This gotta be installed for build() to work
 import random
 from datetime import datetime
+from dateutil import parser
 
 # Setup the Photo v1 API
 SCOPES = ['https://www.googleapis.com/auth/photoslibrary.readonly']
@@ -108,16 +109,17 @@ def albums_list():
 @app.route("/picture")
 def get_picture():
     picture = get_random_picture()
-    creation_time = datetime.strptime(
-        picture['mediaMetadata']['creationTime'], "%Y-%m-%dT%H:%M:%SZ")
-    creation_time_string = creation_time.strftime("%d.%m.%Y, %H:%M:%S")
+    creation_timestamp = parser.parse(picture['mediaMetadata']['creationTime'])
+    creation_date = creation_timestamp.strftime("%d.%m.%Y")
+    creation_time = creation_timestamp.strftime("%H:%M:%S %Z")
     camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
     camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
 
     return render_template(
         'picture.html',
         picture = picture['baseUrl'] + '=w4096-h2048',
-        creationTime = creation_time_string,
+        creationDate = creation_date,
+        creationTime = creation_time,
         cameraMake = camera_make,
         cameraModel = camera_model,
         filename = picture['filename']
