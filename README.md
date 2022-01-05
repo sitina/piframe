@@ -16,6 +16,10 @@ The application that serves the photos from google photos album can run even on 
 
 * Once the virtualenv is ready/initialised, you can run the app only using ./start.sh
 
+* The app will fetch the first google album from the available ones during the initial run, then stores it in config.json file (where it is easy to specify your own)
+
+* The app is available on the address of RPI and port 81 (see start.sh/start-install.sh for the config options to setup the custom port)
+
 ## Run the piserver as a service
 Copy piframe.service to /etc/systemd/system/piframe.service
 
