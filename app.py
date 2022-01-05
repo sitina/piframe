@@ -1,39 +1,20 @@
 """
-Shows basic usage of the Photos v1 API.
-
-Creates a Photos v1 API service and prints the names and ids of the last 10 albums
-the user has access to.
+The application serves random photo from google photos album
 """
-from __future__ import print_function
-from flask import Flask
-from flask import render_template
-
 import os
 import pickle
+import json
+import random
+
+from flask import Flask
+from flask import render_template
 from googleapiclient.discovery import build
 from google.auth.transport.requests import Request
 from google_auth_oauthlib.flow import InstalledAppFlow
-import google_auth_httplib2  # This gotta be installed for build() to work
-import random
 from datetime import datetime
 from dateutil import parser
 
-# Setup the Photo v1 API
-SCOPES = ['https://www.googleapis.com/auth/photoslibrary.readonly']
-creds = None
-if(os.path.exists("token.pickle")):
-    with open("token.pickle", "rb") as tokenFile:
-        creds = pickle.load(tokenFile)
-if not creds or not creds.valid:
-    if (creds and creds.expired and creds.refresh_token):
-        creds.refresh(Request())
-    else:
-        flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
-        creds = flow.run_local_server(port = 0)
-    with open("token.pickle", "wb") as tokenFile:
-        pickle.dump(creds, tokenFile)
-google_photos = build('photoslibrary', 'v1', credentials = creds)
-
+album = ''
 app = Flask(__name__)
 
 
@@ -56,24 +37,13 @@ def is_picture(value):
     return 'photo' in value['mediaMetadata']
 
 def get_random_picture():
-    # Fotorámeček
-    album_id = "AF4UkVii43j_DjJwWvR-pJsQBNdK-Tgr-Qo4Xy4IevSyDLEU8dXLOzZwc0qfKNWcCuhxfXPStRqo"
-
-    # list albums
-    # albums = google_photos.albums().list().execute()
-    # print(albums)
-
-    # get album details
-    # album = google_photos.albums().get(albumId = album_id).execute()
-    # print(album)
-
     pictures = []
     nextpagetoken = 'Dummy'
     while nextpagetoken != '':
         nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
         results = google_photos.mediaItems().search(
             body={
-                "albumId": album_id,
+                "albumId": album,
                 "pageSize": 100,
                 "pageToken": nextpagetoken
                 }).execute()
@@ -129,3 +99,38 @@ def get_picture():
 @app.route("/fullscreen")
 def get_fullscreen():
     return render_template('fullscreen.html')
+
+
+SCOPES = ['https://www.googleapis.com/auth/photoslibrary.readonly']
+creds = None
+if(os.path.exists("token.pickle")):
+    with open("token.pickle", "rb") as tokenFile:
+        creds = pickle.load(tokenFile)
+if not creds or not creds.valid:
+    if (creds and creds.expired and creds.refresh_token):
+        creds.refresh(Request())
+    else:
+        flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
+        creds = flow.run_local_server(port = 0)
+    with open("token.pickle", "wb") as tokenFile:
+        pickle.dump(creds, tokenFile)
+google_photos = build('photoslibrary', 'v1', credentials = creds)
+
+try:
+    with open("config.json", "r") as f:
+        print('loading config')
+        config = json.load(f)
+        album = config['album']
+        print(album)
+except FileNotFoundError:
+    print('loading config failed')
+    album = get_albums()[0]['id']
+    print(album)
+    config = {
+        "album" : album
+    }
+    config_json = json.dumps(config)
+
+    with open("config.json", "w") as jsonfile:
+        jsonfile.write(config_json)
+        print("album written to config file")
