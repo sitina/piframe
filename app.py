@@ -17,7 +17,6 @@ from dateutil import parser
 album = ''
 app = Flask(__name__)
 
-
 def get_albums():
     # list albums
     albums = []
@@ -31,7 +30,6 @@ def get_albums():
 
     # print(albums)
     return albums
-
 
 def is_picture(value):
     return 'photo' in value['mediaMetadata']
@@ -60,21 +58,18 @@ def get_random_picture():
     print(picture['filename'])
     return picture
 
-
 @app.route("/")
 def home():
     return get_fullscreen()
 
-
 @app.route("/albums")
-def albums_list():
+def list_albums():
     albums = get_albums()
     albums_list = []
-    for album in albums:
-        albums_list.append(album['title'] + ' / ' + album['id'])
+    for a in albums:
+        albums_list.append(a['title'] + ' / ' + a['id'])
 
     return render_template('albums.html', list=albums_list)
-
 
 @app.route("/picture")
 def get_picture():
@@ -95,7 +90,6 @@ def get_picture():
         filename = picture['filename']
         )
 
-
 @app.route("/fullscreen")
 def get_fullscreen():
     return render_template('fullscreen.html')
@@ -103,7 +97,7 @@ def get_fullscreen():
 
 SCOPES = ['https://www.googleapis.com/auth/photoslibrary.readonly']
 creds = None
-if(os.path.exists("token.pickle")):
+if os.path.exists("token.pickle"):
     with open("token.pickle", "rb") as tokenFile:
         creds = pickle.load(tokenFile)
 if not creds or not creds.valid:
