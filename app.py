@@ -75,7 +75,7 @@ def list_albums():
 def get_picture():
     picture = get_random_picture()
     creation_timestamp = parser.parse(picture['mediaMetadata']['creationTime'])
-    creation_date = creation_timestamp.strftime("%d.%m.%Y")
+    creation_date = creation_timestamp.strftime("%-d.%-m.%Y")
     creation_time = creation_timestamp.strftime("%H:%M:%S %Z")
     camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
     camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
