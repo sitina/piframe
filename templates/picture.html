@@ -1,50 +1,58 @@
 <!doctype html>
 <html>
-  <head>
-    <title>Photo frame</title>
-    <style>
-      .fullScreenPhoto {
-          max-width: 100%;
-          max-height: 100%;
-          bottom: 0;
-          left: 0;
-          margin: auto;
-          overflow: auto;
-          position: fixed;
-          right: 0;
-          top: 0;
-          -o-object-fit: contain;
-          object-fit: contain;
-      }
-      body {
-        background-color: #000;
-        color: #fff;
-      }
-      .infoFrame {
-          margin: 5px;
-          padding: 10px;
-          background: rgba(175, 175, 175, 0.3);
-          color: #fff;
-          position: relative;
-          z-index: 10;
-          display: inline-block;
-      }
-      h1 {
-        margin: 0px;
-        padding: 0px;
-      }
-    </style>
-    <meta name=”apple-mobile-web-app-capable” content=”yes”>
-    <script>
-    </script>
-  </head>
-  <body>
-    <img src="{{picture}}" class="fullScreenPhoto" />
-    <div class="infoFrame">
-      <h1>{{creationDate}}</h1>
-      {{filename}} / {{cameraMake}} {{cameraModel}}<br />
-      {{creationTime}}
-    </div>
 
-  </body>
+<head>
+  <title>Photo frame</title>
+  <style>
+    .fullScreenPhoto {
+      max-width: 100%;
+      max-height: 100%;
+      bottom: 0;
+      left: 0;
+      margin: auto;
+      overflow: auto;
+      position: fixed;
+      right: 0;
+      top: 0;
+      -o-object-fit: contain;
+      object-fit: contain;
+    }
+
+    body {
+      background-color: #000;
+      color: #fff;
+    }
+
+    .infoFrame {
+      margin: 5px;
+      padding: 10px;
+      background: rgba(175, 175, 175, 0.3);
+      color: #fff;
+      position: relative;
+      z-index: 10;
+      display: inline-block;
+    }
+
+    h1 {
+      margin: 0px;
+      padding: 0px;
+    }
+  </style>
+  <meta name=”apple-mobile-web-app-capable” content=”yes”>
+  <script>
+  </script>
+</head>
+
+<body>
+  <img src="{{picture}}" class="fullScreenPhoto" />
+  <div class="infoFrame">
+    <h1>{{creationDate}}</h1>
+    {{filename}} / {{cameraMake}} {{cameraModel}}<br />
+    {{creationTime}}<br />
+    <h1>{{temperature}}°C</h1>
+    {{weather_type}}
+  </div>
+
+</body>
+
 </html>

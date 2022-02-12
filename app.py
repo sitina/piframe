@@ -5,6 +5,9 @@ import os
 import pickle
 import json
 import random
+from jinja2 import TemplateAssertionError
+import requests
+import time
 
 from flask import Flask
 from flask import render_template
@@ -58,6 +61,20 @@ def get_random_picture():
     print(picture['filename'])
     return picture
 
+def get_weather():
+    ts = time.time()
+    if ts - weather_cache['ts'] > 60000:
+        # print('fetching fresh weather data')
+        if (weather_api_key):
+            weather_url = f"http://api.openweathermap.org/data/2.5/weather?appid={weather_api_key}&q={weather_location}"
+            weather_data = requests.get(weather_url).json()
+            weather_cache['ts'] = ts
+            weather_cache['data'] = weather_data
+            return weather_data
+    else:
+        # print('using weather cache')
+        return weather_cache['data']
+
 @app.route("/")
 def home():
     return get_fullscreen()
@@ -79,6 +96,9 @@ def get_picture():
     creation_time = creation_timestamp.strftime("%H:%M:%S %Z")
     camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
     camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
+    weather = get_weather()
+    temperature = round(weather['main']['feels_like'] - 273.15, 2)
+    weather_type = weather['weather'][0]['main']
 
     return render_template(
         'picture.html',
@@ -87,7 +107,9 @@ def get_picture():
         creationTime = creation_time,
         cameraMake = camera_make,
         cameraModel = camera_model,
-        filename = picture['filename']
+        filename = picture['filename'],
+        temperature = temperature,
+        weather_type = weather_type
         )
 
 @app.route("/fullscreen")
@@ -115,6 +137,9 @@ try:
         print('loading config')
         config = json.load(f)
         album = config['album']
+        weather_api_key = config['weather_api_key']
+        weather_location = config['weather_location']
+        weather_cache = {'ts': 0}
         print(album)
 except FileNotFoundError:
     print('loading config failed')
