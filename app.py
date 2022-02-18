@@ -63,7 +63,7 @@ def get_random_picture():
 
 def get_weather():
     ts = time.time()
-    if ts - weather_cache['ts'] > 60000:
+    if ts - weather_cache['ts'] > 300:
         # print('fetching fresh weather data')
         if (weather_api_key):
             weather_url = f"http://api.openweathermap.org/data/2.5/weather?appid={weather_api_key}&q={weather_location}"
