@@ -97,7 +97,7 @@ def get_picture():
     camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
     camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
     weather = get_weather()
-    temperature = round(weather['main']['feels_like'] - 273.15, 2)
+    temperature = round(weather['main']['feels_like'] - 273.15, 0)
     weather_type = weather['weather'][0]['main']
 
     return render_template(
