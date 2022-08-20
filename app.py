@@ -52,7 +52,7 @@ def get_random_picture():
             results = google_photos.mediaItems().search(
                 body={
                     "albumId": album,
-                    "pageSize": 300,
+                    "pageSize": 100,
                     "pageToken": nextpagetoken
                 }).execute()
             items = results.get('mediaItems', [])
