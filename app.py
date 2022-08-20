@@ -20,13 +20,15 @@ from dateutil import parser
 album = ''
 app = Flask(__name__)
 
+
 def get_albums():
     # list albums
     albums = []
     nextpagetoken = 'Dummy'
     while nextpagetoken != '':
         nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
-        results = google_photos.albums().list(pageSize=50, pageToken = nextpagetoken).execute()
+        results = google_photos.albums().list(
+            pageSize=50, pageToken=nextpagetoken).execute()
         items = results.get('albums', [])
         albums.extend(items)
         nextpagetoken = results.get('nextPageToken', '')
@@ -34,23 +36,33 @@ def get_albums():
     # print(albums)
     return albums
 
+
 def is_picture(value):
     return 'photo' in value['mediaMetadata']
 
+
 def get_random_picture():
     pictures = []
-    nextpagetoken = 'Dummy'
-    while nextpagetoken != '':
-        nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
-        results = google_photos.mediaItems().search(
-            body={
-                "albumId": album,
-                "pageSize": 100,
-                "pageToken": nextpagetoken
+    ts = time.time()
+    # cache pictures for one hour to save API calls
+    if ts - pictures_cache['ts'] > 3600:
+        nextpagetoken = 'Dummy'
+        while nextpagetoken != '':
+            nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
+            results = google_photos.mediaItems().search(
+                body={
+                    "albumId": album,
+                    "pageSize": 300,
+                    "pageToken": nextpagetoken
                 }).execute()
-        items = results.get('mediaItems', [])
-        pictures.extend(list(filter(is_picture, items)))
-        nextpagetoken = results.get('nextPageToken', '')
+            items = results.get('mediaItems', [])
+            pictures.extend(list(filter(is_picture, items)))
+            nextpagetoken = results.get('nextPageToken', '')
+
+        pictures_cache['ts'] = ts
+        pictures_cache['data'] = pictures
+    else:
+        pictures = pictures_cache['data']
 
     picture = random.choice(pictures)
 
@@ -60,6 +72,7 @@ def get_random_picture():
     print(picture['mediaMetadata']['photo'].get('cameraModel', ''))
     print(picture['filename'])
     return picture
+
 
 def get_weather():
     ts = time.time()
@@ -75,9 +88,11 @@ def get_weather():
         # print('using weather cache')
         return weather_cache['data']
 
+
 @app.route("/")
 def home():
     return get_fullscreen()
+
 
 @app.route("/albums")
 def list_albums():
@@ -87,6 +102,7 @@ def list_albums():
         albums_list.append(a['title'] + ' / ' + a['id'])
 
     return render_template('albums.html', list=albums_list)
+
 
 @app.route("/picture")
 def get_picture():
@@ -103,16 +119,17 @@ def get_picture():
 
     return render_template(
         'picture.html',
-        picture = picture['baseUrl'] + '=w4096-h2048',
-        creationDate = creation_date,
-        creationTime = creation_time,
-        cameraMake = camera_make,
-        cameraModel = camera_model,
-        filename = picture['filename'],
-        temperature = temperature,
-        feels_like = feels_like,
-        weather_type = weather_type
-        )
+        picture=picture['baseUrl'] + '=w4096-h2048',
+        creationDate=creation_date,
+        creationTime=creation_time,
+        cameraMake=camera_make,
+        cameraModel=camera_model,
+        filename=picture['filename'],
+        temperature=temperature,
+        feels_like=feels_like,
+        weather_type=weather_type
+    )
+
 
 @app.route("/fullscreen")
 def get_fullscreen():
@@ -128,11 +145,12 @@ if not creds or not creds.valid:
     if (creds and creds.expired and creds.refresh_token):
         creds.refresh(Request())
     else:
-        flow = InstalledAppFlow.from_client_secrets_file('client_secret.json', SCOPES)
-        creds = flow.run_local_server(port = 0)
+        flow = InstalledAppFlow.from_client_secrets_file(
+            'client_secret.json', SCOPES)
+        creds = flow.run_local_server(port=0)
     with open("token.pickle", "wb") as tokenFile:
         pickle.dump(creds, tokenFile)
-google_photos = build('photoslibrary', 'v1', credentials = creds)
+google_photos = build('photoslibrary', 'v1', credentials=creds)
 
 try:
     with open("config.json", "r") as f:
@@ -142,13 +160,14 @@ try:
         weather_api_key = config['weather_api_key']
         weather_location = config['weather_location']
         weather_cache = {'ts': 0}
+        pictures_cache = {'ts': 0}
         print(album)
 except FileNotFoundError:
     print('loading config failed')
     album = get_albums()[0]['id']
     print(album)
     config = {
-        "album" : album
+        "album": album
     }
     config_json = json.dumps(config)
 
