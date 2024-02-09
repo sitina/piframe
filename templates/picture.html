@@ -2,56 +2,102 @@
 <html>
 
 <head>
-  <title>Photo frame</title>
-  <style>
-    .fullScreenPhoto {
-      max-width: 100%;
-      max-height: 100%;
-      bottom: 0;
-      left: 0;
-      margin: auto;
-      overflow: auto;
-      position: fixed;
-      right: 0;
-      top: 0;
-      -o-object-fit: contain;
-      object-fit: contain;
-    }
+    <title>Photo frame</title>
+    <style>
+        .fullScreenPhoto {
+            max-width: 100%;
+            max-height: 100%;
+            bottom: 0;
+            left: 0;
+            margin: auto;
+            overflow: auto;
+            position: fixed;
+            right: 0;
+            top: 0;
+            -o-object-fit: contain;
+            object-fit: contain;
+        }
 
-    body {
-      background-color: #000;
-      color: #fff;
-    }
+        body {
+            background-color: #000;
+            color: #fff;
+        }
 
-    .infoFrame {
-      margin: 5px;
-      padding: 10px;
-      background: rgba(175, 175, 175, 0.3);
-      color: #fff;
-      position: relative;
-      z-index: 10;
-      display: inline-block;
-    }
+        .infoFrame {
+            margin: 5px;
+            padding: 10px;
+            background: rgba(175, 175, 175, 0.3);
+            color: #fff;
+            position: relative;
+            z-index: 10;
+            display: inline-block;
+        }
 
-    h1 {
-      margin: 0px;
-      padding: 0px;
-    }
-  </style>
-  <meta name=”apple-mobile-web-app-capable” content=”yes”>
-  <script>
-  </script>
+        .weatherFrame {
+            margin: 5px;
+            padding: 10px;
+            background: rgba(175, 175, 175, 0.3);
+            color: #fff;
+            position: absolute;
+            z-index: 10;
+            display: inline-block;
+            left: 0%;
+            bottom: 0%;
+        }
+
+        .forecastFrame {
+            margin: 5px;
+            padding: 10px;
+            background: rgba(175, 175, 175, 0.3);
+            color: #fff;
+            position: absolute;
+            z-index: 10;
+            display: inline-block;
+            right: 0%;
+            top: 0%;
+            width: 25%;
+            max-width: 450px;
+        }
+
+        h1 {
+            margin: 0px;
+            padding: 0px;
+        }
+    </style>
+    <meta name=”apple-mobile-web-app-capable” content=”yes”>
+    <script>
+    </script>
 </head>
 
 <body>
-  <img src="{{picture}}" class="fullScreenPhoto" />
-  <div class="infoFrame">
-    <h1>{{creationDate}}</h1>
+<img src="{{ picture }}" class="fullScreenPhoto" alt="{{ picture }}" />
+<div class="infoFrame">
+    <h1>{{ creationDate }}</h1>
     <!-- {{filename}} / {{cameraMake}} {{cameraModel}}<br />-->
-    {{creationTime}}<br />
-    <h1>{{temperature}}°C</h1>
-    FL {{feels_like}}°C / {{weather_type}}
-  </div>
+    {{ creationTime }}<br/>
+    <h1>{{ temperature }}°C</h1>
+    FL {{ feels_like }}°C / {{ weather_type }}
+</div>
+<div class="weatherFrame">
+    <table>
+        <tbody>
+        <tr>
+            {% for f1 in forecast %}
+                <td style="text-align: center">
+                    <img src="{{ f1['icon'] }}" alt="{{ f1['weather'] }}"/><br />
+                    {{ f1['time'] }}<br/>
+                    {{ f1['temp'] }}°C<br />
+                    FL&nbsp;{{ f1['feels_like'] }}°C
+                </td>
+            {% endfor %}
+        </tr>
+        </tbody>
+    </table>
+</div>
+<div class="forecastFrame">
+    <img src="/weather/forecast.png" alt="forecast trendline" style="width: 100%" />
+</div>
+
 
 </body>
 

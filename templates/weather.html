@@ -2,20 +2,32 @@
 <html lang="en/us">
 
 <head>
-  <title>Photo frame - weather</title>
+    <title>Photo frame - weather</title>
 </head>
 
-<body>
-  <div class="infoFrame">
-    <h1>{{temperature}}°C</h1>
-    FL {{feels_like}}°C / {{weather_type}}
-  </div>
-  <div>
-    {{forecast}}
-  </div>
-  <div>
-    <img src="/weather/forecast.png" alt="forecast trendline" />
-  </div>
+<body style="background-color: black;">
+<div class="infoFrame">
+    <h1>{{ temperature }}°C</h1>
+    FL {{ feels_like }}°C / {{ weather_type }}
+</div>
+<div style="background-color: white;">
+    <table>
+        <tbody>
+        <tr>
+            {% for f1 in forecast %}
+                <td>
+                    {{ f1['time'] }}<br/>
+                    {{ f1['temp'] }}°C/FL&nbsp;{{ f1['feels_like'] }}°C<br/>
+                    <img src="{{ f1['icon'] }}" alt="{{ f1['weather'] }}" />
+                </td>
+                {% endfor %}
+        </tr>
+        </tbody>
+    </table>
+</div>
+<div>
+    <img src="/weather/forecast.png" alt="forecast trendline"/>
+</div>
 
 </body>
 

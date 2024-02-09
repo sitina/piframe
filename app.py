@@ -101,20 +101,19 @@ def get_forecast():
     lat = 50.1267
     ts = time.time()
     if ts - weather_cache['forecast_ts'] > 300:
-        # print('fetching fresh weather data')
         if os.path.isfile(forecast_file):
             with open(forecast_file) as f:
+                print('fetching weather data from file')
                 return json.load(f)
-            # print('fetching fresh weather data')
         elif weather_api_key:
-            print('getting forecast')
+            print('getting forecast via api')
             weather_url = f"http://api.openweathermap.org/data/2.5/forecast?appid={weather_api_key}&lat={lat}&lon={lon}"
             weather_data = requests.get(weather_url).json()
             weather_cache['forecast_ts'] = ts
             weather_cache['forecast'] = weather_data
             return weather_data
     else:
-        # print('using weather cache')
+        print('using weather cache')
         return weather_cache['forecast']
 
 
@@ -128,7 +127,7 @@ def to_celsius(original):
 
 
 def process_forecast(forecast_data):
-    print(forecast_data)
+    # print(forecast_data)
     result = []
     for item in forecast_data['list']:
         temp = to_celsius(item['main']['temp'])
@@ -136,6 +135,8 @@ def process_forecast(forecast_data):
         humidity = item['main']['humidity']
         weather = item['weather'][0]['main']
         dt = item['dt_txt']
+        tt = item['dt_txt'][11:]
+        icon = 'https://openweathermap.org/img/wn/' + item['weather'][0]['icon'] + '@2x.png'
         result.append(
             {
                 'dt': dt,
@@ -143,6 +144,8 @@ def process_forecast(forecast_data):
                 'feels_like': feels_like,
                 'weather': weather,
                 'humidity': humidity,
+                'icon': icon,
+                'time': tt,
             }
         )
     return result
@@ -158,20 +161,33 @@ def plot_png():
 
 def create_figure():
     fig = Figure()
-    axis = fig.add_subplot(1, 1, 1)
-    # fig.title('title name')
-    # fig.xlabel('x_axis name')
-    # fig.ylabel('y_axis name')
+    # fig.patch.set_facecolor('white') # instead of fig.patch.set_facecolor
+    fig.patch.set_alpha(0.3)
+    axis = fig.add_subplot(1, 1, 1, facecolor="none")
 
     forecast_data = get_forecast()
     forecast = process_forecast(forecast_data)
 
-    xs = [f['dt'] for f in forecast]
-    ys = [f['temp'] for f in forecast]
+    # 2024-02-10 00:00:00
+    # -> 10 00 (only date + hours)
+    xs = [f['dt'][:13][8:] for f in forecast]
+    # -> 00 (only hours)
+    xticks = [f['dt'][:13][11:] for f in forecast]
+    ys1 = [f['temp'] for f in forecast]
+    ys2 = [f['feels_like'] for f in forecast]
 
-    # xs = range(100)
-    # ys = [random.randint(1, 50) for x in xs]
-    axis.plot(xs, ys)
+    axis.plot(xs, ys1, color='green', label='forecast')
+    axis.plot(xs, ys2, color='blue', label='feels like')
+    axis.legend(loc='best')
+    axis.set_xticks(xs)
+    axis.set_xticklabels(xticks)
+    axis.tick_params(axis='x', rotation=90)
+
+    # make line for every new day
+    for val in xs:
+        if val[3:] == '00':
+            axis.axvline(x=val, color='black')
+
     return fig
 
 
@@ -180,7 +196,7 @@ def weather_view():
     weather = get_weather()
     forecast_data = get_forecast()
     forecast = process_forecast(forecast_data)
-    print(forecast)
+    # print(forecast)
     temperature = to_celsius(weather['main']['temp'])
     feels_like = to_celsius(weather['main']['feels_like'])
     weather_type = weather['weather'][0]['main']
@@ -190,7 +206,7 @@ def weather_view():
         temperature=temperature,
         feels_like=feels_like,
         weather_type=weather_type,
-        forecast=forecast
+        forecast=forecast[slice(6)]
     )
 
 
@@ -213,8 +229,11 @@ def get_picture():
     camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
     camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
     weather = get_weather()
-    temperature = round(weather['main']['temp'] - 273.15, 0)
-    feels_like = round(weather['main']['feels_like'] - 273.15, 0)
+    forecast_data = get_forecast()
+    forecast = process_forecast(forecast_data)
+    # print(forecast)
+    temperature = to_celsius(weather['main']['temp'])
+    feels_like = to_celsius(weather['main']['feels_like'])
     weather_type = weather['weather'][0]['main']
 
     return render_template(
@@ -227,7 +246,8 @@ def get_picture():
         filename=picture['filename'],
         temperature=temperature,
         feels_like=feels_like,
-        weather_type=weather_type
+        weather_type=weather_type,
+        forecast=forecast[slice(6)],
     )
 
 
