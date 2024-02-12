@@ -5,7 +5,6 @@ import os
 import pickle
 import json
 import random
-# from jinja2 import TemplateAssertionError
 import requests
 import time
 
@@ -24,7 +23,7 @@ from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 album = ''
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static',)
 
 
 def get_albums():
@@ -136,7 +135,7 @@ def process_forecast(forecast_data):
         weather = item['weather'][0]['main']
         dt = item['dt_txt']
         tt = item['dt_txt'][11:]
-        icon = 'https://openweathermap.org/img/wn/' + item['weather'][0]['icon'] + '@2x.png'
+        icon = '/static/images/' + item['weather'][0]['icon'] + '@2x.gif'
         result.append(
             {
                 'dt': dt,
@@ -153,15 +152,18 @@ def process_forecast(forecast_data):
 
 @app.route('/weather/forecast.png')
 def plot_png():
-    fig = create_figure()
-    output = io.BytesIO()
-    FigureCanvas(fig).print_png(output)
-    return Response(output.getvalue(), mimetype='image/png')
+    ts = time.time()
+    if ts - weather_cache['forecast_ts'] > 300 or not('forecast_chart' in weather_cache):
+        fig = create_figure()
+        output = io.BytesIO()
+        FigureCanvas(fig).print_png(output)
+        weather_cache['forecast_chart'] = output.getvalue()
+
+    return Response(weather_cache['forecast_chart'], mimetype='image/png')
 
 
 def create_figure():
     fig = Figure()
-    # fig.patch.set_facecolor('white') # instead of fig.patch.set_facecolor
     fig.patch.set_alpha(0.3)
     axis = fig.add_subplot(1, 1, 1, facecolor="none")
 
@@ -176,7 +178,7 @@ def create_figure():
     ys1 = [f['temp'] for f in forecast]
     ys2 = [f['feels_like'] for f in forecast]
 
-    axis.plot(xs, ys1, color='green', label='forecast')
+    axis.plot(xs, ys1, color='red', label='forecast')
     axis.plot(xs, ys2, color='blue', label='feels like')
     axis.legend(loc='best')
     axis.set_xticks(xs)
