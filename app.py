@@ -144,7 +144,7 @@ def process_forecast(forecast_data):
                 'weather': weather,
                 'humidity': humidity,
                 'icon': icon,
-                'time': tt,
+                'time': tt[:2],
             }
         )
     return result

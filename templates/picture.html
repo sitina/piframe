@@ -84,8 +84,8 @@
         <tr>
             {% for f1 in forecast %}
                 <td style="text-align: center">
-                    <img src="{{ f1['icon'] }}" alt="{{ f1['weather'] }}"/><br />
                     {{ f1['time'] }}<br/>
+                    <img src="{{ f1['icon'] }}" alt="{{ f1['weather'] }}" width="60%"/><br />
                     {{ f1['temp'] }}°C<br />
                     FL&nbsp;{{ f1['feels_like'] }}°C
                 </td>
