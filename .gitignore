@@ -4,3 +4,5 @@ client_secret.json
 token.pickle
 config.json
 .idea
+performance_log*
+piframe.log

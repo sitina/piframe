@@ -1,132 +1,137 @@
 """
 The application serves random photo from google photos album
+Optimized for Raspberry Pi performance
 """
+# Standard library imports
+import io
+import json
 import os
 import pickle
-import json
 import random
-import requests
 import time
+import threading
+from datetime import datetime, timedelta
+from functools import wraps
 
-from flask import Flask
-from flask import render_template
-from googleapiclient.discovery import build
-from google.auth.transport.requests import Request
-from google_auth_oauthlib.flow import InstalledAppFlow
-from datetime import datetime
+# Third-party imports
 from dateutil import parser
+from flask import Flask, Response, render_template, request, jsonify
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend for better performance
 import matplotlib.pyplot as plt
-import io
-import random
-from flask import Response
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 from matplotlib.figure import Figure
+import requests
 
+# Local imports
+import drive_pictures
+
+# Global variables
 album = ''
-app = Flask(__name__, static_folder='static',)
+app = Flask(__name__, static_folder='static')
 
+# Enhanced caching with longer TTL for Raspberry Pi
+weather_cache = {
+    'ts': 0, 
+    'forecast_ts': 0, 
+    'data': None, 
+    'forecast': None,
+    'forecast_chart': None,
+    'forecast_chart_ts': 0
+}
 
-def get_albums():
-    # list albums
-    albums = []
-    nextpagetoken = 'Dummy'
-    while nextpagetoken != '':
-        nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
-        results = google_photos.albums().list(
-            pageSize=50, pageToken=nextpagetoken).execute()
-        items = results.get('albums', [])
-        albums.extend(items)
-        nextpagetoken = results.get('nextPageToken', '')
+# Cache TTLs (in seconds) - longer for Raspberry Pi to reduce API calls
+WEATHER_CACHE_TTL = 600  # 10 minutes instead of 5
+FORECAST_CACHE_TTL = 1800  # 30 minutes instead of 5
+CHART_CACHE_TTL = 3600  # 1 hour for chart generation
 
-    # print(albums)
-    return albums
+# Background task for preloading data
+def background_data_refresh():
+    """Background task to refresh weather data periodically"""
+    while True:
+        try:
+            # Refresh weather data in background
+            get_weather(force_refresh=True)
+            get_forecast(force_refresh=True)
+            time.sleep(300)  # Run every 5 minutes
+        except Exception as e:
+            print(f"Background refresh error: {e}")
+            time.sleep(60)  # Wait 1 minute on error
 
+def start_background_tasks():
+    """Start background tasks in separate thread"""
+    refresh_thread = threading.Thread(target=background_data_refresh, daemon=True)
+    refresh_thread.start()
 
-def is_picture(value):
-    return 'photo' in value['mediaMetadata']
-
-
-def get_random_picture():
-    pictures = []
+def get_weather(force_refresh=False):
+    """Get weather data with enhanced caching"""
     ts = time.time()
-    # cache pictures for one hour to save API calls
-    if ts - pictures_cache['ts'] > 3600:
-        nextpagetoken = 'Dummy'
-        while nextpagetoken != '':
-            nextpagetoken = '' if nextpagetoken == 'Dummy' else nextpagetoken
-            results = google_photos.mediaItems().search(
-                body={
-                    "albumId": album,
-                    "pageSize": 100,
-                    "pageToken": nextpagetoken
-                }).execute()
-            items = results.get('mediaItems', [])
-            pictures.extend(list(filter(is_picture, items)))
-            nextpagetoken = results.get('nextPageToken', '')
-
-        pictures_cache['ts'] = ts
-        pictures_cache['data'] = pictures
-    else:
-        pictures = pictures_cache['data']
-
-    picture = random.choice(pictures)
-
-    # print(picture)
-    print(picture['mediaMetadata']['creationTime'])
-    print(picture['mediaMetadata']['photo'].get('cameraMake', ''))
-    print(picture['mediaMetadata']['photo'].get('cameraModel', ''))
-    print(picture['filename'])
-    return picture
-
-
-def get_weather():
-    ts = time.time()
-    if ts - weather_cache['ts'] > 300:
+    if force_refresh or ts - weather_cache['ts'] > WEATHER_CACHE_TTL:
         if weather_api_key:
-            weather_url = f"http://api.openweathermap.org/data/2.5/weather?appid={weather_api_key}&q={weather_location}"
-            weather_data = requests.get(weather_url).json()
-            weather_cache['ts'] = ts
-            weather_cache['data'] = weather_data
-            return weather_data
-    else:
-        # print('using weather cache')
-        return weather_cache['data']
+            try:
+                weather_url = f"http://api.openweathermap.org/data/2.5/weather?appid={weather_api_key}&q={weather_location}"
+                weather_data = requests.get(weather_url, timeout=10).json()
+                weather_cache['ts'] = ts
+                weather_cache['data'] = weather_data
+                return weather_data
+            except Exception as e:
+                print(f"Weather API error: {e}")
+                # Return cached data if available, even if expired
+                if weather_cache['data']:
+                    return weather_cache['data']
+                return None
+    return weather_cache['data']
 
-
-def get_forecast():
+def get_forecast(force_refresh=False):
+    """Get forecast data with enhanced caching"""
     print('getting forecast')
     forecast_file = 'forecast.json'
     lon = 14.4936
     lat = 50.1267
     ts = time.time()
-    if ts - weather_cache['forecast_ts'] > 300:
+    
+    if force_refresh or ts - weather_cache['forecast_ts'] > FORECAST_CACHE_TTL:
         if os.path.isfile(forecast_file):
             with open(forecast_file) as f:
                 print('fetching weather data from file')
-                return json.load(f)
+                data = json.load(f)
+                weather_cache['forecast_ts'] = ts
+                weather_cache['forecast'] = data
+                return data
         elif weather_api_key:
-            print('getting forecast via api')
-            weather_url = f"http://api.openweathermap.org/data/2.5/forecast?appid={weather_api_key}&lat={lat}&lon={lon}"
-            weather_data = requests.get(weather_url).json()
-            weather_cache['forecast_ts'] = ts
-            weather_cache['forecast'] = weather_data
-            return weather_data
+            try:
+                print('getting forecast via api')
+                weather_url = f"http://api.openweathermap.org/data/2.5/forecast?appid={weather_api_key}&lat={lat}&lon={lon}"
+                weather_data = requests.get(weather_url, timeout=15).json()
+                weather_cache['forecast_ts'] = ts
+                weather_cache['forecast'] = weather_data
+                return weather_data
+            except Exception as e:
+                print(f"Forecast API error: {e}")
+                if weather_cache['forecast']:
+                    return weather_cache['forecast']
+                return None
     else:
         print('using weather cache')
         return weather_cache['forecast']
-
 
 @app.route("/")
 def home():
     return get_fullscreen()
 
-
 def to_celsius(original):
     return round(original - 273.15, 1)
 
-
 def process_forecast(forecast_data):
-    # print(forecast_data)
+    """Process forecast data with caching"""
+    if not forecast_data or 'list' not in forecast_data:
+        return []
+    
     result = []
     for item in forecast_data['list']:
         temp = to_celsius(item['main']['temp'])
@@ -136,69 +141,78 @@ def process_forecast(forecast_data):
         dt = item['dt_txt']
         tt = item['dt_txt'][11:]
         icon = '/static/images/' + item['weather'][0]['icon'] + '@2x.gif'
-        result.append(
-            {
-                'dt': dt,
-                'temp': temp,
-                'feels_like': feels_like,
-                'weather': weather,
-                'humidity': humidity,
-                'icon': icon,
-                'time': tt[:2],
-            }
-        )
+        result.append({
+            'dt': dt,
+            'temp': temp,
+            'feels_like': feels_like,
+            'weather': weather,
+            'humidity': humidity,
+            'icon': icon,
+            'time': tt[:2],
+        })
     return result
-
 
 @app.route('/weather/forecast.png')
 def plot_png():
+    """Serve forecast chart with enhanced caching"""
     ts = time.time()
-    if ts - weather_cache['forecast_ts'] > 300 or not('forecast_chart' in weather_cache):
-        fig = create_figure()
-        output = io.BytesIO()
-        FigureCanvas(fig).print_png(output)
-        weather_cache['forecast_chart'] = output.getvalue()
+    if ts - weather_cache['forecast_chart_ts'] > CHART_CACHE_TTL or not weather_cache['forecast_chart']:
+        try:
+            fig = create_figure()
+            output = io.BytesIO()
+            FigureCanvas(fig).print_png(output)
+            weather_cache['forecast_chart'] = output.getvalue()
+            weather_cache['forecast_chart_ts'] = ts
+            plt.close(fig)  # Close figure to free memory
+        except Exception as e:
+            print(f"Chart generation error: {e}")
+            return "Chart generation failed", 500
 
     return Response(weather_cache['forecast_chart'], mimetype='image/png')
 
-
 def create_figure():
-    fig = Figure()
+    """Create forecast chart with optimized settings"""
+    # Use smaller figure size for better performance
+    fig = Figure(figsize=(8, 4), dpi=72)
     fig.patch.set_alpha(0.3)
     axis = fig.add_subplot(1, 1, 1, facecolor="none")
 
     forecast_data = get_forecast()
     forecast = process_forecast(forecast_data)
+    
+    if not forecast:
+        return fig
 
-    # 2024-02-10 00:00:00
-    # -> 10 00 (only date + hours)
+    # Optimize data processing
     xs = [f['dt'][:13][8:] for f in forecast]
-    # -> 00 (only hours)
     xticks = [f['dt'][:13][11:] for f in forecast]
     ys1 = [f['temp'] for f in forecast]
     ys2 = [f['feels_like'] for f in forecast]
 
-    axis.plot(xs, ys1, color='red', label='forecast')
-    axis.plot(xs, ys2, color='blue', label='feels like')
-    axis.legend(loc='best')
+    axis.plot(xs, ys1, color='red', label='forecast', linewidth=1)
+    axis.plot(xs, ys2, color='blue', label='feels like', linewidth=1)
+    axis.legend(loc='best', fontsize=8)
     axis.set_xticks(xs)
-    axis.set_xticklabels(xticks)
+    axis.set_xticklabels(xticks, fontsize=8)
     axis.tick_params(axis='x', rotation=90)
 
-    # make line for every new day
+    # Optimize day separator lines
     for val in xs:
         if val[3:] == '00':
-            axis.axvline(x=val, color='black')
+            axis.axvline(x=val, color='black', alpha=0.3, linewidth=0.5)
 
     return fig
 
-
 @app.route("/weather")
 def weather_view():
+    """Weather view with optimized data fetching"""
     weather = get_weather()
     forecast_data = get_forecast()
     forecast = process_forecast(forecast_data)
-    # print(forecast)
+    
+    if not weather:
+        return "Weather data unavailable", 503
+    
     temperature = to_celsius(weather['main']['temp'])
     feels_like = to_celsius(weather['main']['feels_like'])
     weather_type = weather['weather'][0]['main']
@@ -208,72 +222,90 @@ def weather_view():
         temperature=temperature,
         feels_like=feels_like,
         weather_type=weather_type,
-        forecast=forecast[slice(6)]
+        forecast=forecast[:6]  # Only first 6 items
     )
-
-
-@app.route("/albums")
-def list_albums():
-    albums = get_albums()
-    albums_list = []
-    for a in albums:
-        albums_list.append(a['title'] + ' / ' + a['id'])
-
-    return render_template('albums.html', list=albums_list)
-
 
 @app.route("/picture")
 def get_picture():
-    picture = get_random_picture()
-    creation_timestamp = parser.parse(picture['mediaMetadata']['creationTime'])
-    creation_date = creation_timestamp.strftime("%-d.%-m.%Y")
-    creation_time = creation_timestamp.strftime("%H:%M:%S %Z")
-    camera_make = picture['mediaMetadata']['photo'].get('cameraMake', '')
-    camera_model = picture['mediaMetadata']['photo'].get('cameraModel', '')
+    """Picture view with optimized data fetching and metadata"""
+    from flask import request
+    
     weather = get_weather()
     forecast_data = get_forecast()
     forecast = process_forecast(forecast_data)
-    # print(forecast)
+    
+    if not weather:
+        return "Weather data unavailable", 503
+    
     temperature = to_celsius(weather['main']['temp'])
     feels_like = to_celsius(weather['main']['feels_like'])
     weather_type = weather['weather'][0]['main']
 
+    # Check if we should force a new image (timestamp parameter present)
+    force_new = 't' in request.args
+    
+    # Get image metadata
+    try:
+        response = drive_pictures.serve_random_image(force_new=force_new, include_metadata=True)
+        metadata = {
+            'creation_date': response.headers.get('X-Image-Date', 'Unknown'),
+            'creation_time': response.headers.get('X-Image-Time', 'Unknown'),
+            'camera_info': response.headers.get('X-Camera-Info', 'Unknown'),
+            'dimensions': response.headers.get('X-Image-Dimensions', 'Unknown')
+        }
+    except Exception as e:
+        print(f"Error getting metadata: {e}")
+        metadata = {
+            'creation_date': 'Unknown',
+            'creation_time': 'Unknown',
+            'camera_info': 'Unknown',
+            'dimensions': 'Unknown'
+        }
+
     return render_template(
         'picture.html',
-        picture=picture['baseUrl'] + '=w4096-h2048',
-        creationDate=creation_date,
-        creationTime=creation_time,
-        cameraMake=camera_make,
-        cameraModel=camera_model,
-        filename=picture['filename'],
+        picture='/random-picture/new' if force_new else '/random-picture',
         temperature=temperature,
         feels_like=feels_like,
         weather_type=weather_type,
-        forecast=forecast[slice(6)],
+        forecast=forecast[:6],  # Only first 6 items
+        creation_date=metadata['creation_date'],
+        creation_time=metadata['creation_time'],
+        camera_info=metadata['camera_info'],
+        dimensions=metadata['dimensions']
     )
-
 
 @app.route("/fullscreen")
 def get_fullscreen():
     return render_template('fullscreen.html')
 
+@app.route("/random-picture")
+def get_random_picture():
+    return drive_pictures.serve_random_image()
 
-SCOPES = ['https://www.googleapis.com/auth/photoslibrary.readonly']
-creds = None
-if os.path.exists("token.pickle"):
-    with open("token.pickle", "rb") as tokenFile:
-        creds = pickle.load(tokenFile)
-if not creds or not creds.valid:
-    if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    else:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            'client_secret.json', SCOPES)
-        creds = flow.run_local_server(port=0)
-    with open("token.pickle", "wb") as tokenFile:
-        pickle.dump(creds, tokenFile)
-google_photos = build('photoslibrary', 'v1', credentials=creds)
+@app.route("/random-picture/new")
+def get_new_random_picture():
+    """Force a new random picture by bypassing cache"""
+    return drive_pictures.serve_random_image(force_new=True)
 
+@app.route("/random-picture/metadata")
+def get_random_picture_metadata():
+    """Get metadata for a random picture"""
+    
+    # Get a random image with metadata
+    response = drive_pictures.serve_random_image(include_metadata=True)
+    
+    # Extract metadata from response headers
+    metadata = {
+        'creation_date': response.headers.get('X-Image-Date', 'Unknown'),
+        'creation_time': response.headers.get('X-Image-Time', 'Unknown'),
+        'camera_info': response.headers.get('X-Camera-Info', 'Unknown'),
+        'dimensions': response.headers.get('X-Image-Dimensions', 'Unknown')
+    }
+    
+    return jsonify(metadata)
+
+# Configuration loading
 try:
     with open("config.json", "r") as f:
         print('loading config')
@@ -281,18 +313,97 @@ try:
         album = config['album']
         weather_api_key = config['weather_api_key']
         weather_location = config['weather_location']
-        weather_cache = {'ts': 0, 'forecast_ts': 0}
-        pictures_cache = {'ts': 0}
         print(album)
 except FileNotFoundError:
     print('loading config failed')
-    album = get_albums()[0]['id']
-    print(album)
+    album = ''
+    weather_api_key = None
+    weather_location = None
     config = {
-        "album": album
+        "album": album,
+        "weather_api_key": "",
+        "weather_location": ""
     }
-    config_json = json.dumps(config)
-
+    config_json = json.dumps(config, indent=2)
     with open("config.json", "w") as jsonfile:
         jsonfile.write(config_json)
-        print("album written to config file")
+        print("config template written to config file")
+
+# Start background tasks
+start_background_tasks()
+
+if __name__ == '__main__':
+    """
+    Optimized startup for Raspberry Pi performance
+    """
+    import argparse
+    import logging
+    import signal
+    import sys
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='PiFrame - Digital Photo Frame with Weather')
+    parser.add_argument('--port', type=int, default=5001, help='Port to run on (default: 5001)')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
+    parser.add_argument('--debug', action='store_true', help='Enable debug mode')
+    parser.add_argument('--no-background', action='store_true', help='Disable background tasks')
+    
+    args = parser.parse_args()
+    
+    # Configure logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.FileHandler('piframe.log'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    
+    logger = logging.getLogger(__name__)
+    logger.info("Starting PiFrame application...")
+    logger.info("Optimized for Raspberry Pi performance")
+    
+    # Graceful shutdown handler
+    def signal_handler(signum, frame):
+        logger.info(f"Received signal {signum}, shutting down gracefully...")
+        sys.exit(0)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    # Disable background tasks if requested
+    if args.no_background:
+        logger.info("Background tasks disabled")
+    else:
+        logger.info("Background tasks enabled")
+    
+    # Configure Flask for production
+    if not args.debug:
+        app.config['DEBUG'] = False
+        app.config['TESTING'] = False
+        
+        # Production optimizations
+        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 300  # 5 minutes cache
+        app.config['TEMPLATES_AUTO_RELOAD'] = False
+        
+        logger.info("Running in production mode")
+    else:
+        app.config['DEBUG'] = True
+        logger.info("Running in debug mode")
+    
+    try:
+        # Start the Flask application
+        logger.info(f"Starting server on {args.host}:{args.port}")
+        app.run(
+            host=args.host,
+            port=args.port,
+            debug=args.debug,
+            threaded=True,
+            use_reloader=False  # Disable reloader for production
+        )
+    except KeyboardInterrupt:
+        logger.info("Application stopped by user")
+    except Exception as e:
+        logger.error(f"Application error: {e}")
+        sys.exit(1)

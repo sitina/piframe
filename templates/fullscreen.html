@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en/us">
+
 <head>
     <title>Photo frame</title>
     <style>
@@ -32,7 +33,7 @@
             height: 100%;
         }
     </style>
-    <meta name=”apple-mobile-web-app-capable” content=”yes”>
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <script>
         var elem = document.documentElement;
 
@@ -63,15 +64,18 @@
         window.setInterval("reloadIFrame();", 30000);
 
         function reloadIFrame() {
-            document.getElementById("picFrame").src = "../picture";
+            var timestamp = new Date().getTime();
+            document.getElementById("picFrame").src = "../picture?t=" + timestamp;
         }
     </script>
 </head>
+
 <body>
-<iframe src="../picture" title="/picture" id="picFrame"></iframe>
-<div class="infoFrame">
-    <button onclick="openFullscreen();">Open Fullscreen</button>
-    <button onclick="closeFullscreen();">Close Fullscreen</button>
-</div>
+    <iframe src="../picture" title="/picture" id="picFrame"></iframe>
+    <div class="infoFrame">
+        <button onclick="openFullscreen();">Open Fullscreen</button>
+        <button onclick="closeFullscreen();">Close Fullscreen</button>
+    </div>
 </body>
+
 </html>

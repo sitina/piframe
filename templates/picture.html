@@ -59,44 +59,72 @@
             max-width: 450px;
         }
 
+        .metadataFrame {
+            margin: 5px;
+            padding: 10px;
+            background: rgba(175, 175, 175, 0.3);
+            color: #fff;
+            position: absolute;
+            z-index: 10;
+            display: inline-block;
+            left: 0%;
+            top: 0%;
+            font-size: 0.9em;
+        }
+
         h1 {
             margin: 0px;
             padding: 0px;
         }
+
+        .metadata-item {
+            margin: 2px 0;
+        }
     </style>
-    <meta name=”apple-mobile-web-app-capable” content=”yes”>
+    <meta name="apple-mobile-web-app-capable" content="yes">
     <script>
+        // Add cache-busting timestamp to image URL
+        window.onload = function () {
+            var img = document.querySelector('.fullScreenPhoto');
+            if (img) {
+                var timestamp = new Date().getTime();
+                img.src = img.src + '?t=' + timestamp;
+            }
+        };
     </script>
 </head>
 
 <body>
-<img src="{{ picture }}" class="fullScreenPhoto" alt="{{ picture }}" />
-<div class="infoFrame">
-    <h1>{{ creationDate }}</h1>
-    <!-- {{filename}} / {{cameraMake}} {{cameraModel}}<br />-->
-    {{ creationTime }}<br/>
-    <h1>{{ temperature }}°C</h1>
-    FL {{ feels_like }}°C / {{ weather_type }}
-</div>
-<div class="weatherFrame">
-    <table>
-        <tbody>
-        <tr>
-            {% for f1 in forecast %}
-                <td style="text-align: center">
-                    {{ f1['time'] }}<br/>
-                    <img src="{{ f1['icon'] }}" alt="{{ f1['weather'] }}" width="60%"/><br />
-                    {{ f1['temp'] }}°C<br />
-                    FL&nbsp;{{ f1['feels_like'] }}°C
-                </td>
-            {% endfor %}
-        </tr>
-        </tbody>
-    </table>
-</div>
-<div class="forecastFrame">
-    <img src="/weather/forecast.png" alt="forecast trendline" style="width: 100%" />
-</div>
+    <img src="{{ picture }}" class="fullScreenPhoto" alt="{{ picture }}" />
+    <div class="infoFrame">
+        <h1>{{ creation_date }}</h1>
+        {{ creation_time }}<br />
+        <h1>{{ temperature }}°C</h1>
+        FL {{ feels_like }}°C / {{ weather_type }}
+    </div>
+    <div class="metadataFrame">
+        <div class="metadata-item"><strong>Camera:</strong> {{ camera_info }}</div>
+        <div class="metadata-item"><strong>Size:</strong> {{ dimensions }}</div>
+    </div>
+    <div class="weatherFrame">
+        <table>
+            <tbody>
+                <tr>
+                    {% for f1 in forecast %}
+                    <td style="text-align: center">
+                        {{ f1['time'] }}<br />
+                        <img src="{{ f1['icon'] }}" alt="{{ f1['weather'] }}" width="60%" /><br />
+                        {{ f1['temp'] }}°C<br />
+                        FL&nbsp;{{ f1['feels_like'] }}°C
+                    </td>
+                    {% endfor %}
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="forecastFrame">
+        <img src="/weather/forecast.png" alt="forecast trendline" style="width: 100%" />
+    </div>
 
 
 </body>

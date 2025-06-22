@@ -1,0 +1,27 @@
+{
+    "python.defaultInterpreterPath": "./venv/bin/python",
+    "python.terminal.activateEnvironment": true,
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": true,
+    "python.linting.flake8Args": [
+        "--max-line-length=88",
+        "--extend-ignore=E203,W503"
+    ],
+    "python.formatting.provider": "autopep8",
+    "python.formatting.autopep8Args": [
+        "--max-line-length=88",
+        "--aggressive",
+        "--aggressive"
+    ],
+    "python.linting.lintOnSave": true,
+    "python.linting.lintOnType": true,
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": true
+    },
+    "python.sortImports.args": [
+        "--profile=black",
+        "--line-length=88"
+    ]
+}

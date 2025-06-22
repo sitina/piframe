@@ -1,0 +1,39 @@
+[Unit]
+Description=PiFrame Photo Display Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/piframe
+Environment=PYTHONPATH=/home/pi/piframe
+Environment=FLASK_ENV=production
+ExecStart=/home/pi/piframe/venv/bin/python start_optimized.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Resource limits for Raspberry Pi
+Nice=10
+IOSchedulingClass=2
+IOSchedulingPriority=4
+
+# Memory management
+MemoryMax=512M
+MemorySwapMax=0
+
+# CPU management
+CPUQuota=50%
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/home/pi/piframe
+
+[Install]
+WantedBy=multi-user.target 
