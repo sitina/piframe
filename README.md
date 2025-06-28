@@ -11,127 +11,183 @@ A Flask-based digital photo frame application that displays random photos from G
 - **Image Variety**: Different images on each refresh
 - **Responsive Design**: Works on tablets, phones, and desktop
 
-## Installation
+## Current Status
 
-1. Clone the repository:
+⚠️ **Important**: The application currently has a simplified configuration. You need to set up your Google Drive album ID manually.
+
+## Quick Start
+
+1. **Clone and setup**:
 ```bash
 git clone <repository-url>
 cd piframe
+./start-install.sh
 ```
 
-2. Create and activate virtual environment:
+2. **Configure your settings** (choose one method):
+
+   **Option A: Interactive setup** (recommended):
+   ```bash
+   python setup.py
+   ```
+
+   **Option B: Manual configuration**:
+   - Edit `config.json` and add your Google Drive folder ID:
+```json
+{
+  "album": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
+  "weather_api_key": "your_openweathermap_api_key",
+  "weather_location": "Your City, Country"
+}
+```
+
+3. **Get your Google Drive folder ID** (if doing manual setup):
+   - Open Google Drive in your browser
+   - Navigate to the folder containing your photos
+   - Copy the URL from the address bar
+   - The folder ID is the long string after `/folders/` in the URL
+   - Example: `https://drive.google.com/drive/folders/1ABC123DEF456GHI789JKL`
+   - Folder ID: `1ABC123DEF456GHI789JKL`
+
+4. **Access the application**:
+   - Open http://localhost:81 in your browser
+
+## Installation
+
+### Prerequisites
+
+1. **Google Drive API Setup**:
+   - Create a project in [Google Cloud Console](https://console.developers.google.com/)
+   - Enable Google Drive API
+   - Create OAuth 2.0 credentials
+   - Download as `client_secret.json` to project root
+
+2. **OpenWeatherMap API** (optional):
+   - Get free API key from [OpenWeatherMap](https://openweathermap.org/api)
+   - Add to `config.json`
+
+### Automated Setup
+
 ```bash
-python -m venv venv
+./start-install.sh
+```
+
+This script will:
+- Create virtual environment
+- Install dependencies
+- Start the application on port 81
+
+### Manual Setup
+
+1. **Create virtual environment**:
+```bash
+python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-3. Install dependencies:
+2. **Install dependencies**:
 ```bash
 pip install -r requirements.txt
 ```
 
-4. Set up Google Drive API:
-   - Create a project in Google Cloud Console
-   - Enable Google Drive API
-   - Create credentials (OAuth 2.0)
-   - Download `credentials.json` to project root
+3. **Configure the application**:
+   - **Option A**: Use the interactive setup script: `python setup.py`
+   - **Option B**: Manually edit `config.json` with your settings
+   - Ensure `client_secret.json` is in the project root
 
-5. Configure the application:
-   - Create `config.json` with your settings:
+4. **Run the application**:
+```bash
+# Development mode
+python app.py --debug
+
+# Production mode (default)
+python app.py
+
+# Custom port
+python app.py --port 8080
+```
+
+## Configuration
+
+### Quick Setup
+
+For interactive configuration, use the setup script:
+```bash
+python setup.py
+```
+
+This will guide you through setting up all required configuration options.
+
+### Manual Configuration
+
+Create or edit `config.json`:
+
 ```json
 {
   "album": "your_google_drive_folder_id",
   "weather_api_key": "your_openweathermap_api_key",
-  "weather_location": "Prague,CZ"
+  "weather_location": "City, Country",
+  "background_refresh_interval": 300,
+  "error_retry_interval": 60,
+  "frontend_refresh_interval": 30
 }
 ```
 
+### Configuration Options
+
+#### Required Settings
+
+- **`album`**: Your Google Drive folder ID containing the photos
+- **`weather_api_key`**: Your OpenWeatherMap API key (optional, for weather features)
+- **`weather_location`**: Your location for weather data (optional, e.g., "Prague, CZ")
+
+#### Optional Settings
+
+- **`background_refresh_interval`** (default: 300 seconds = 5 minutes): How often weather data is refreshed in the background
+- **`error_retry_interval`** (default: 60 seconds = 1 minute): How long to wait before retrying on background refresh errors  
+- **`frontend_refresh_interval`** (default: 30 seconds): How often the fullscreen view automatically refreshes to show new images
+
+### Finding Your Google Drive Folder ID
+
+1. Open Google Drive in your browser
+2. Navigate to the folder containing your photos
+3. Copy the URL from the address bar
+4. The folder ID is the long string after '/folders/' in the URL
+   - Example: `https://drive.google.com/drive/folders/1ABC123DEF456GHI789JKL`
+   - The folder ID would be: `1ABC123DEF456GHI789JKL`
+
 ## Usage
 
-### Development Mode
+### Access Points
+
+- **Main view**: http://localhost:5001 (default) or http://localhost:81 (when using start-install.sh)
+- **Weather view**: http://localhost:5001/weather
+- **Picture view**: http://localhost:5001/picture
+- **Fullscreen**: http://localhost:5001/fullscreen
+
+### Command Line Options
+
 ```bash
+# Development mode
 python app.py --debug
-```
 
-### Production Mode (Optimized for Raspberry Pi) - Default
-```bash
-python app.py
-```
-
-### Custom Port
-```bash
+# Custom port
 python app.py --port 8080
-```
 
-### Disable Background Tasks (for testing)
-```bash
+# Custom host
+python app.py --host 127.0.0.1
+
+# Disable background tasks (for testing)
 python app.py --no-background
 ```
 
-### System Service (Linux)
+### System Service (Linux/Raspberry Pi)
+
 ```bash
 sudo cp piframe-optimized.service /etc/systemd/system/
 sudo systemctl enable piframe-optimized
 sudo systemctl start piframe-optimized
 ```
-
-## Testing
-
-The project includes a comprehensive test suite covering:
-
-- **Unit Tests**: Individual component testing
-- **Integration Tests**: Component interaction testing
-- **Performance Tests**: Performance monitoring and optimization
-- **Configuration Tests**: Config management and validation
-
-### Running Tests
-
-1. **Run all tests with coverage**:
-```bash
-python run_tests.py
-```
-
-2. **Run specific test categories**:
-```bash
-# Unit tests only
-python run_tests.py --unit-only
-
-# Integration tests only
-python run_tests.py --integration-only
-
-# Performance tests only
-python run_tests.py --performance-only
-```
-
-3. **Run specific test file**:
-```bash
-python run_tests.py --test-file tests/test_app.py
-```
-
-4. **Run without coverage**:
-```bash
-python run_tests.py --no-coverage
-```
-
-5. **Run individual test files**:
-```bash
-python -m unittest tests.test_app
-python -m unittest tests.test_drive_pictures
-python -m unittest tests.test_image_metadata
-```
-
-### Test Coverage
-
-The test suite provides comprehensive coverage of:
-- Flask routes and error handling
-- Google Drive API integration
-- Image metadata extraction
-- Weather API integration
-- Caching mechanisms
-- Performance monitoring
-- Configuration management
-
-Coverage reports are generated in HTML format in the `htmlcov/` directory.
 
 ## API Endpoints
 
@@ -144,90 +200,83 @@ Coverage reports are generated in HTML format in the `htmlcov/` directory.
 - `/random-picture/metadata` - Get image metadata as JSON
 - `/weather/forecast.png` - Weather forecast chart
 
-## Configuration
+## Testing
 
-### Environment Variables
-- `PIFRAME_ALBUM` - Google Drive folder ID
-- `PIFRAME_WEATHER_API_KEY` - OpenWeatherMap API key
-- `PIFRAME_WEATHER_LOCATION` - Weather location
-
-### Performance Settings
-- Weather cache TTL: 10 minutes
-- Forecast cache TTL: 30 minutes
-- Chart cache TTL: 1 hour
-- Image cache TTL: 5 minutes
-- Recently served images: 10 items
-
-## Performance Optimizations
-
-- **Enhanced Caching**: Longer TTLs for reduced API calls
-- **Background Tasks**: Weather and image preloading
-- **Memory Management**: Automatic cleanup and limits
-- **Network Optimization**: Connection pooling and timeouts
-- **Matplotlib Optimization**: Non-interactive backend
-- **Resource Limits**: Systemd service with memory/CPU limits
-
-## Monitoring
-
-Use the performance monitoring script:
+### Run all tests with coverage:
 ```bash
-python monitor_performance.py
+python run_tests.py
 ```
 
-This provides:
-- Memory usage tracking
-- CPU usage monitoring
-- Disk usage statistics
-- Network usage metrics
-- Performance alerts
-- Trend analysis
+### Run specific test categories:
+```bash
+# Unit tests only
+python run_tests.py --unit-only
+
+# Integration tests only  
+python run_tests.py --integration-only
+
+# Performance tests only
+python run_tests.py --performance-only
+```
+
+### Test Google Drive connection:
+```bash
+python test_drive_connection.py
+```
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Port 5000 in use** (macOS):
-   - Disable AirPlay Receiver in System Preferences
-   - Or use port 5001: `python start_optimized.py --port 5001`
+1. **Images not loading**:
+   - Check that `album` field is set in `config.json`
+   - Verify the folder ID is correct
+   - Ensure you have access to the Google Drive folder
+   - Check that `client_secret.json` is valid
 
-2. **SSL errors during image download**:
-   - Check network connectivity
-   - Verify Google Drive API credentials
-   - Check firewall settings
+2. **Weather not showing**:
+   - Verify `weather_api_key` is set in `config.json`
+   - Check that the API key is valid
+   - Ensure `weather_location` is correctly formatted
 
-3. **Weather API errors**:
-   - Verify API key is valid
-   - Check location format
-   - Ensure API quota not exceeded
+3. **Port conflicts**:
+   - Default port is 5001, but `start-install.sh` uses port 81
+   - Change port using `python app.py --port 8080`
+   - Or modify `start-install.sh` to use a different port
+
+4. **Google Drive API errors**:
+   - Verify `client_secret.json` exists and is valid
+   - Check that Google Drive API is enabled in your Google Cloud project
+   - Ensure OAuth consent screen is configured
+
+### Debug Mode
+
+Run with debug mode to see detailed error messages:
+```bash
+python app.py --debug
+```
 
 ### Logs
 
-- Application logs: `piframe.log`
-- System service logs: `journalctl -u piframe-optimized`
-
-## Development
-
-### Code Quality
-
-The project uses:
-- **Flake8** for linting
-- **Autopep8** for code formatting
-- **Coverage** for test coverage
-- **Unittest** for testing
-
-### Running Linters
-
+Check the application logs:
 ```bash
-# Format code
-autopep8 --in-place --recursive .
-
-# Check code style
-flake8 .
+tail -f piframe.log
 ```
 
-## License
+## Performance Optimizations
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+- **Enhanced Caching**: Weather data cached for 10 minutes
+- **Background Tasks**: Automatic weather data refresh
+- **Memory Management**: Automatic cleanup and limits
+- **Network Optimization**: Connection pooling and timeouts
+- **Matplotlib Optimization**: Non-interactive backend
+
+## Monitoring
+
+Monitor performance with:
+```bash
+python monitor_performance.py
+```
 
 ## Contributing
 
@@ -235,13 +284,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 2. Create a feature branch
 3. Make your changes
 4. Add tests for new functionality
-5. Ensure all tests pass
+5. Run the test suite
 6. Submit a pull request
 
-## Support
+## License
 
-For issues and questions:
-1. Check the troubleshooting section
-2. Review the logs
-3. Run the test suite
-4. Create an issue with detailed information
+This project is licensed under the MIT License - see the LICENSE file for details.

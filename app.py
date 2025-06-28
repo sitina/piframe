@@ -58,10 +58,10 @@ def background_data_refresh():
             # Refresh weather data in background
             get_weather(force_refresh=True)
             get_forecast(force_refresh=True)
-            time.sleep(300)  # Run every 5 minutes
+            time.sleep(background_refresh_interval)  # Use configured interval
         except Exception as e:
             print(f"Background refresh error: {e}")
-            time.sleep(60)  # Wait 1 minute on error
+            time.sleep(error_retry_interval)  # Use configured error retry interval
 
 def start_background_tasks():
     """Start background tasks in separate thread"""
@@ -277,7 +277,7 @@ def get_picture():
 
 @app.route("/fullscreen")
 def get_fullscreen():
-    return render_template('fullscreen.html')
+    return render_template('fullscreen.html', refresh_interval=frontend_refresh_interval)
 
 @app.route("/random-picture")
 def get_random_picture():
@@ -313,16 +313,28 @@ try:
         album = config['album']
         weather_api_key = config['weather_api_key']
         weather_location = config['weather_location']
+        
+        # Load refresh intervals from config with defaults
+        background_refresh_interval = config.get('background_refresh_interval', 300)  # 5 minutes default
+        error_retry_interval = config.get('error_retry_interval', 60)  # 1 minute default
+        frontend_refresh_interval = config.get('frontend_refresh_interval', 30)  # 30 seconds default
+        
         print(album)
 except FileNotFoundError:
     print('loading config failed')
     album = ''
     weather_api_key = None
     weather_location = None
+    background_refresh_interval = 300  # 5 minutes default
+    error_retry_interval = 60  # 1 minute default
+    frontend_refresh_interval = 30  # 30 seconds default
     config = {
         "album": album,
         "weather_api_key": "",
-        "weather_location": ""
+        "weather_location": "",
+        "background_refresh_interval": background_refresh_interval,
+        "error_retry_interval": error_retry_interval,
+        "frontend_refresh_interval": frontend_refresh_interval
     }
     config_json = json.dumps(config, indent=2)
     with open("config.json", "w") as jsonfile:

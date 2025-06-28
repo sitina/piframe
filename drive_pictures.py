@@ -32,6 +32,24 @@ CACHE_TTL = 3600  # 1 hour cache for file listing
 _metadata_cache = {}
 METADATA_CACHE_SIZE = 20  # Keep metadata for 20 images
 
+# Load configuration for refresh intervals
+def load_refresh_config():
+    """Load refresh intervals from config.json"""
+    try:
+        import json
+        with open("config.json", "r") as f:
+            config = json.load(f)
+            return {
+                'preload_interval': config.get('preload_interval', 900),  # 15 minutes default
+                'preload_error_retry_interval': config.get('preload_error_retry_interval', 300)  # 5 minutes default
+            }
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        # Return defaults if config file is not available
+        return {
+            'preload_interval': 900,  # 15 minutes default
+            'preload_error_retry_interval': 300  # 5 minutes default
+        }
+
 def get_credentials():
     """Get valid user credentials from storage or user input with caching."""
     global _credentials_cache
@@ -369,6 +387,12 @@ def serve_random_image(force_new=False, include_metadata=False):
 def preload_images():
     """Background task to preload some images for faster serving."""
     folder_id = '1USBfMHxXEZiL1XS562A6WlApGBobVp3q'
+    
+    # Load refresh configuration
+    refresh_config = load_refresh_config()
+    preload_interval = refresh_config['preload_interval']
+    preload_error_retry_interval = refresh_config['preload_error_retry_interval']
+    
     while True:
         try:
             # Refresh file list more frequently
@@ -388,10 +412,10 @@ def preload_images():
                     random_file = random.choice(files)
                     download_file(random_file['id'])
             
-            time.sleep(900)  # Run every 15 minutes instead of 30
+            time.sleep(preload_interval)  # Use configured interval
         except Exception as e:
             print(f"Preload error: {e}")
-            time.sleep(300)  # Wait 5 minutes on error
+            time.sleep(preload_error_retry_interval)  # Use configured error retry interval
 
 def start_preload_task():
     """Start background preload task."""

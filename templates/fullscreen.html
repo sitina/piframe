@@ -61,7 +61,7 @@
             openFullscreen();
         });
 
-        window.setInterval("reloadIFrame();", 30000);
+        window.setInterval("reloadIFrame();", {{ refresh_interval * 1000 }});
 
         function reloadIFrame() {
             var timestamp = new Date().getTime();
