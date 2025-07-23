@@ -71,14 +71,14 @@ class TestDriveService(unittest.TestCase):
         self.assertEqual(self.drive_service._credentials, mock_creds)
         mock_file.assert_called_with("token.pickle", 'rb')
 
-    @patch('os.path.exists', return_value=True)
+    @patch('os.path.exists')
     @patch('builtins.open', new_callable=mock_open)
     @patch('pickle.load', side_effect=pickle.UnpicklingError("Corrupted"))
     @patch('os.remove')
     def test_load_credentials_corrupted_token(self, mock_remove, mock_pickle_load, mock_file, mock_exists):
         """Test handling corrupted token file."""
-        # Mock credentials file exists
-        mock_exists.side_effect = lambda path: path == "client_secret.json"
+        # Mock token file exists, credentials file exists
+        mock_exists.side_effect = lambda path: path in ["token.pickle", "client_secret.json"]
         
         with patch('piframe.services.drive_service.InstalledAppFlow') as mock_flow:
             mock_creds = MagicMock()
@@ -90,7 +90,7 @@ class TestDriveService(unittest.TestCase):
             result = self.drive_service._load_credentials()
             
             # Should remove corrupted token file
-            mock_remove.assert_called_with("token.pickle")
+            mock_remove.assert_called_with(self.config.drive_token_file)
             # Should create new credentials
             self.assertEqual(result, mock_creds)
 
@@ -151,7 +151,7 @@ class TestDriveService(unittest.TestCase):
 
     def test_service_property_no_credentials(self):
         """Test service property with no credentials."""
-        with patch.object(self.drive_service, 'credentials', return_value=None):
+        with patch.object(self.drive_service, '_load_credentials', return_value=None):
             with self.assertRaises(RuntimeError):
                 _ = self.drive_service.service
 
