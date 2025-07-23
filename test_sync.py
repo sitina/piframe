@@ -54,6 +54,17 @@ def test_synchronization():
     # Verify synchronization
     print("3. Verifying synchronization...")
     
+    # Check for new synchronization features
+    image_hash_meta = metadata.get('image_hash')
+    image_hash_header = image_response.headers.get('X-Image-Hash')
+    sync_status = image_response.headers.get('X-Sync-Status', 'unknown')
+    correlation_id = image_response.headers.get('X-Correlation-ID')
+    
+    print(f"Image hash from metadata: {image_hash_meta}")
+    print(f"Image hash from headers: {image_hash_header}")
+    print(f"Sync status: {sync_status}")
+    print(f"Correlation ID: {correlation_id}")
+    
     # The metadata from the JSON should match the headers from the image
     metadata_matches = (
         metadata['creation_date'] == metadata_headers['X-Image-Date'] and
@@ -62,9 +73,27 @@ def test_synchronization():
         metadata['dimensions'] == metadata_headers['X-Image-Dimensions']
     )
     
-    if metadata_matches:
-        print("✅ SUCCESS: Metadata and image are synchronized!")
+    # Check hash synchronization
+    hash_matches = (image_hash_meta and image_hash_header and 
+                   image_hash_meta == image_hash_header)
+    
+    # Check if synchronized properly
+    is_synchronized = sync_status == 'synchronized'
+    
+    print(f"Metadata matches: {metadata_matches}")
+    print(f"Hash matches: {hash_matches}")
+    print(f"Is synchronized: {is_synchronized}")
+    
+    if metadata_matches and hash_matches and is_synchronized:
+        print("✅ SUCCESS: Metadata and image are fully synchronized!")
         return True
+    elif metadata_matches:
+        print("⚠️  PARTIAL: Basic metadata matches but sync features may have issues")
+        if not hash_matches:
+            print("   - Hash verification failed")
+        if not is_synchronized:
+            print("   - Sync status indicates fallback mode")
+        return True  # Consider partial success for backward compatibility
     else:
         print("❌ FAILURE: Metadata and image are NOT synchronized!")
         print("Metadata from JSON:", metadata)

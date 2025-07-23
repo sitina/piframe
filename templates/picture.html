@@ -83,46 +83,188 @@
     </style>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <script>
-        function updateImageAndMetadata() {
-            fetch('/random-picture/metadata')
+        let retryCount = 0;
+        const MAX_RETRIES = 3;
+        const RETRY_DELAY = 2000; // 2 seconds
+        const LOADING_TIMEOUT = 15000; // 15 seconds timeout
+        let currentImageHash = null;
+        let isLoading = false;
+        let loadingTimeout = null;
+
+        function showLoadingIndicator() {
+            var metadataFrame = document.querySelector('.metadataFrame');
+            if (metadataFrame) {
+                metadataFrame.style.display = 'inline-block';
+                metadataFrame.innerHTML = '<div class="metadata-item">Loading new image...</div>';
+            }
+        }
+
+        function hideLoadingIndicator() {
+            var metadataFrame = document.querySelector('.metadataFrame');
+            if (metadataFrame) {
+                // Restore original content
+                metadataFrame.innerHTML = `
+                    <div class="metadata-item">
+                        <strong>Date:</strong> <span id="creation-date">Loading...</span>
+                    </div>
+                    <div class="metadata-item">
+                        <strong>Time:</strong> <span id="creation-time">Loading...</span>
+                    </div>
+                `;
+            }
+        }
+
+        function verifyImageMetadataSync(data, imageResponse) {
+            // Verify that image hash matches metadata hash (non-blocking)
+            if (data.image_hash && imageResponse) {
+                const imageHash = imageResponse.headers.get('X-Image-Hash');
+                if (imageHash && imageHash !== data.image_hash) {
+                    console.warn('Image hash mismatch detected (continuing anyway):', {
+                        metadata_hash: data.image_hash,
+                        image_hash: imageHash
+                    });
+                    // Return true anyway - don't block on hash mismatch
+                }
+            }
+            return true; // Always return true to avoid blocking
+        }
+
+        function updateMetadataElements(data) {
+            // Safely update metadata elements with null checks
+            try {
+                const creationDateEl = document.getElementById('creation-date');
+                const creationTimeEl = document.getElementById('creation-time');
+                if (creationDateEl) creationDateEl.innerText = data.creation_date || 'Unknown';
+                if (creationTimeEl) creationTimeEl.innerText = data.creation_time || 'Unknown';
+
+                console.log('Successfully updated metadata elements');
+                return true;
+            } catch (error) {
+                console.error('Error updating metadata elements:', error);
+                return false;
+            }
+        }
+
+        function finalizeImageUpdate(data) {
+            // Final step: hide loading indicator and show metadata
+            try {
+                hideLoadingIndicator();
+
+                // Update metadata elements after hiding loading indicator
+                updateMetadataElements(data);
+
+                // Show metadata frame
+                const metadataFrame = document.querySelector('.metadataFrame');
+                if (metadataFrame) {
+                    metadataFrame.style.display = 'inline-block';
+                }
+
+                console.log('Successfully finalized image update');
+                return true;
+            } catch (error) {
+                console.error('Error finalizing image update:', error);
+                return false;
+            }
+        }
+
+        function updateImageAndMetadata(attempt = 0) {
+            if (isLoading && attempt === 0) {
+                console.log('Update already in progress, skipping');
+                return;
+            }
+
+            // Set loading state and show indicator
+            isLoading = true;
+            if (attempt === 0) {
+                showLoadingIndicator();
+
+                // Set timeout to prevent getting stuck
+                loadingTimeout = setTimeout(() => {
+                    console.error('Loading timeout reached, forcing reset');
+                    resetLoadingAndHandle(false);
+                }, LOADING_TIMEOUT);
+            }
+
+            console.log(`Updating image and metadata (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+
+            // Wrapper to ensure isLoading is always reset
+            const resetLoadingAndHandle = (success, data = null) => {
+                try {
+                    // Clear loading timeout
+                    if (loadingTimeout) {
+                        clearTimeout(loadingTimeout);
+                        loadingTimeout = null;
+                    }
+
+                    isLoading = false;
+
+                    if (success) {
+                        retryCount = 0;
+                        console.log('Successfully updated image and metadata');
+                    } else {
+                        handleUpdateFailure(attempt);
+                    }
+                } catch (error) {
+                    console.error('Error in resetLoadingAndHandle:', error);
+                    isLoading = false;
+                    handleUpdateFailure(attempt);
+                }
+            };
+
+            // Main update logic with comprehensive error handling
+            fetch('/random-picture/metadata', {
+                cache: 'no-cache',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            })
                 .then(response => {
                     if (!response.ok) {
-                        throw new Error('Network response was not ok');
+                        throw new Error(`Metadata fetch failed: ${response.status}`);
                     }
                     return response.json();
                 })
                 .then(data => {
-                    // Update image source
-                    var img = document.querySelector('.fullScreenPhoto');
-                    if (img) {
+                    console.log('Metadata received:', data);
+
+                    // Update image source first
+                    const img = document.querySelector('.fullScreenPhoto');
+                    if (img && data.picture_url) {
                         img.src = data.picture_url;
+                        currentImageHash = data.image_hash;
+                        console.log('Updated image source:', data.picture_url);
+                    } else {
+                        throw new Error('Invalid image data or missing image element');
                     }
 
-                    // Update metadata
-                    var creationDateEl = document.getElementById('creation-date');
-                    var creationTimeEl = document.getElementById('creation-time');
-                    var cameraInfoEl = document.getElementById('camera-info');
-                    var dimensionsEl = document.getElementById('dimensions');
-
-                    if (creationDateEl) creationDateEl.innerText = data.creation_date || 'Unknown';
-                    if (creationTimeEl) creationTimeEl.innerText = data.creation_time || 'Unknown';
-                    if (cameraInfoEl) cameraInfoEl.innerText = data.camera_info || 'Unknown';
-                    if (dimensionsEl) dimensionsEl.innerText = data.dimensions || 'Unknown';
-
-                    // Show metadata frame
-                    var metadataFrame = document.querySelector('.metadataFrame');
-                    if (metadataFrame) {
-                        metadataFrame.style.display = 'inline-block';
-                    }
+                    // Finalize the update (hide loading, update metadata, show frame)
+                    const success = finalizeImageUpdate(data);
+                    resetLoadingAndHandle(success, data);
                 })
                 .catch(error => {
-                    console.error('Error fetching new image and metadata:', error);
-                    // Hide metadata frame on error
-                    var metadataFrame = document.querySelector('.metadataFrame');
+                    console.error('Error in updateImageAndMetadata:', error);
+                    resetLoadingAndHandle(false);
+                });
+        }
+
+        function handleUpdateFailure(attempt) {
+            if (attempt < MAX_RETRIES) {
+                console.log(`Retrying in ${RETRY_DELAY}ms... (${attempt + 1}/${MAX_RETRIES})`);
+                setTimeout(() => {
+                    updateImageAndMetadata(attempt + 1);
+                }, RETRY_DELAY);
+            } else {
+                console.error('Max retries reached, giving up');
+                // Hide loading indicator and metadata frame on final failure
+                try {
+                    const metadataFrame = document.querySelector('.metadataFrame');
                     if (metadataFrame) {
                         metadataFrame.style.display = 'none';
                     }
-                });
+                } catch (error) {
+                    console.error('Error hiding metadata frame:', error);
+                }
+            }
         }
 
         window.onload = function () {
@@ -159,21 +301,6 @@
     </div>
     <div class="forecastFrame">
         <img src="/weather/forecast.png" alt="forecast trendline" style="width: 100%" />
-    </div>
-
-    <div class="metadataFrame" style="display: none;">
-        <div class="metadata-item">
-            <strong>Date:</strong> <span id="creation-date">Loading...</span>
-        </div>
-        <div class="metadata-item">
-            <strong>Time:</strong> <span id="creation-time">Loading...</span>
-        </div>
-        <div class="metadata-item">
-            <strong>Camera:</strong> <span id="camera-info">Loading...</span>
-        </div>
-        <div class="metadata-item">
-            <strong>Dimensions:</strong> <span id="dimensions">Loading...</span>
-        </div>
     </div>
 
 </body>

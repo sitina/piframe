@@ -94,6 +94,11 @@ class PiFrameApp:
             """Get synchronized random picture (for metadata consistency)."""
             return self.image_service.serve_synchronized_image()
         
+        @self.app.route("/random-picture/synchronized-metadata")
+        def synchronized_metadata():
+            """Get synchronized image and metadata in atomic operation."""
+            return jsonify(self.image_service.get_synchronized_metadata())
+        
         @self.app.route("/weather/forecast.png")
         def forecast_chart():
             """Weather forecast chart."""

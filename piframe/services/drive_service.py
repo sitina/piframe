@@ -225,9 +225,33 @@ class DriveService(LoggerMixin):
         cached_data = self.cache_manager.get('downloads', cache_key)
         if cached_data is not None:
             self.logger.debug(f"Using cached download for file {file_id}")
-            # Return a fresh BytesIO object at position 0
-            cached_data.seek(0)
-            return cached_data
+            try:
+                # Handle both old BytesIO objects and new raw bytes
+                if isinstance(cached_data, bytes):
+                    # New format: raw bytes - create fresh BytesIO
+                    fresh_copy = io.BytesIO(cached_data)
+                    fresh_copy.seek(0)
+                    self.logger.debug(f"Created fresh BytesIO from cached bytes for {file_id} ({len(cached_data)} bytes)")
+                    return fresh_copy
+                elif hasattr(cached_data, 'read'):
+                    # Old format: BytesIO object - check validity and create copy
+                    if hasattr(cached_data, 'closed') and cached_data.closed:
+                        self.logger.warning(f"Cached BytesIO for {file_id} is closed, removing from cache")
+                        self.cache_manager.delete('downloads', cache_key)
+                    else:
+                        # Create a fresh BytesIO copy to avoid shared state issues
+                        cached_data.seek(0)
+                        fresh_copy = io.BytesIO(cached_data.read())
+                        fresh_copy.seek(0)
+                        self.logger.debug(f"Created fresh copy from cached BytesIO for {file_id}")
+                        return fresh_copy
+                else:
+                    # Invalid cache format
+                    self.logger.warning(f"Invalid cached data format for {file_id}, removing from cache")
+                    self.cache_manager.delete('downloads', cache_key)
+            except (ValueError, OSError, AttributeError) as e:
+                self.logger.warning(f"Cached download for {file_id} is invalid ({e}), removing from cache")
+                self.cache_manager.delete('downloads', cache_key)
         
         retry_delay = 1
         
@@ -286,14 +310,14 @@ class DriveService(LoggerMixin):
         """Cache downloaded file with size management."""
         cache_key = f"download_{file_id}"
         
-        # Create a copy for caching
+        # Store raw bytes instead of BytesIO object to avoid shared state issues
         file_buffer.seek(0)
-        cached_buffer = io.BytesIO(file_buffer.read())
+        raw_bytes = file_buffer.read()
         
-        # Store in cache
-        self.cache_manager.set('downloads', cache_key, cached_buffer)
+        # Store raw bytes in cache
+        self.cache_manager.set('downloads', cache_key, raw_bytes)
         
-        self.logger.debug(f"Cached download for file {file_id}")
+        self.logger.debug(f"Cached download for file {file_id} ({len(raw_bytes)} bytes)")
     
     def get_random_image(self, folder_id: Optional[str] = None, 
                         avoid_recent: bool = True) -> Optional[Dict[str, Any]]:
