@@ -249,12 +249,15 @@ class TestDriveService(unittest.TestCase):
 
     def test_download_file_cached(self):
         """Test downloading file with cached data."""
-        cached_data = io.BytesIO(b'cached file data')
-        self.mock_cache_manager.get.return_value = cached_data
+        cached_bytes = b'cached file data'
+        self.mock_cache_manager.get.return_value = cached_bytes
         
         result = self.drive_service.download_file('test_file_id')
         
-        self.assertEqual(result, cached_data)
+        # Should return a fresh BytesIO object with the cached content
+        self.assertIsInstance(result, io.BytesIO)
+        result.seek(0)
+        self.assertEqual(result.read(), cached_bytes)
         self.mock_cache_manager.get.assert_called_with('downloads', 'download_test_file_id')
 
     @patch('piframe.services.drive_service.build')

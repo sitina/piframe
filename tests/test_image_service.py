@@ -255,9 +255,9 @@ class TestImageService(unittest.TestCase):
 
     def test_serve_synchronized_image_expired(self):
         """Test serving synchronized image when current image is expired."""
-        # Set up expired synchronized state
+        # Set up expired synchronized state (timeout is 60 seconds, so use 70 seconds ago)
         self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_timestamp = time.time() - 10  # 10 seconds ago
+        self.image_service._current_image_timestamp = time.time() - 70  # 70 seconds ago
         
         with patch.object(self.image_service, 'serve_random_image') as mock_serve:
             mock_response = MagicMock()
