@@ -106,7 +106,7 @@ def main():
     if config.get('album'):
         print("Testing Google Drive connection...")
         try:
-            import drive_pictures
+            import legacy.drive_pictures as drive_pictures
             files = drive_pictures.list_images_in_folder(config['album'])
             print(f"✅ Successfully connected! Found {len(files)} images.")
         except Exception as e:

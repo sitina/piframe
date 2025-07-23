@@ -32,20 +32,35 @@ CACHE_TTL = 3600  # 1 hour cache for file listing
 _metadata_cache = {}
 METADATA_CACHE_SIZE = 20  # Keep metadata for 20 images
 
-# Load configuration for refresh intervals
-def load_refresh_config():
-    """Load refresh intervals from config.json"""
+# Load configuration for refresh intervals and album settings
+def load_config():
+    """Load configuration from config.json with all necessary settings"""
     try:
         import json
-        with open("config.json", "r") as f:
-            config = json.load(f)
-            return {
-                'preload_interval': config.get('preload_interval', 900),  # 15 minutes default
-                'preload_error_retry_interval': config.get('preload_error_retry_interval', 300)  # 5 minutes default
-            }
+        # Try config/ directory first, then root directory for backward compatibility
+        config_paths = ["config/config.json", "config.json"]
+        config = None
+        
+        for config_path in config_paths:
+            try:
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                    break
+            except FileNotFoundError:
+                continue
+        
+        if config is None:
+            raise FileNotFoundError("No config file found")
+            
+        return {
+            'album_id': config.get('album', config.get('album_id', '1USBfMHxXEZiL1XS562A6WlApGBobVp3q')),  # Default fallback
+            'preload_interval': config.get('preload_interval', 900),  # 15 minutes default
+            'preload_error_retry_interval': config.get('preload_error_retry_interval', 300)  # 5 minutes default
+        }
     except (FileNotFoundError, json.JSONDecodeError, KeyError):
         # Return defaults if config file is not available
         return {
+            'album_id': '1USBfMHxXEZiL1XS562A6WlApGBobVp3q',  # Default fallback
             'preload_interval': 900,  # 15 minutes default
             'preload_error_retry_interval': 300  # 5 minutes default
         }
@@ -286,7 +301,8 @@ def download_file(file_id):
 
 def serve_random_image(force_new=False, include_metadata=False):
     """Serve a random image from the Google Drive folder with optimizations."""
-    folder_id = '1USBfMHxXEZiL1XS562A6WlApGBobVp3q'
+    config = load_config()
+    folder_id = config['album_id']
     
     try:
         # Get all available images
@@ -389,12 +405,10 @@ def serve_random_image(force_new=False, include_metadata=False):
 # Background task to preload images
 def preload_images():
     """Background task to preload some images for faster serving."""
-    folder_id = '1USBfMHxXEZiL1XS562A6WlApGBobVp3q'
-    
-    # Load refresh configuration
-    refresh_config = load_refresh_config()
-    preload_interval = refresh_config['preload_interval']
-    preload_error_retry_interval = refresh_config['preload_error_retry_interval']
+    config = load_config()
+    folder_id = config['album_id']
+    preload_interval = config['preload_interval']
+    preload_error_retry_interval = config['preload_error_retry_interval']
     
     while True:
         try:

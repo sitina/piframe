@@ -5,24 +5,25 @@ Test script to verify Google Drive connection and image loading
 import sys
 import os
 
-# Add the current directory to Python path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Add the parent directory to Python path to access modules
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_drive_connection():
     """Test Google Drive connection and list images"""
     try:
         print("Testing Google Drive connection...")
         
-        # Import drive_pictures module
-        import drive_pictures
+        # Import drive_pictures module from legacy
+        import legacy.drive_pictures as drive_pictures
         
         # Test service creation
         print("Creating Google Drive service...")
         service = drive_pictures.get_service()
         print("✅ Service created successfully")
         
-        # Test listing images
-        folder_id = '1USBfMHxXEZiL1XS562A6WlApGBobVp3q'
+        # Load config to get folder ID
+        config = drive_pictures.load_config()
+        folder_id = config['album_id']
         print(f"Listing images from folder: {folder_id}")
         
         files = drive_pictures.list_images_in_folder(folder_id)
@@ -65,8 +66,8 @@ def test_image_metadata():
     try:
         print("\nTesting image metadata extraction...")
         
-        import drive_pictures
-        import image_metadata
+        import legacy.drive_pictures as drive_pictures
+        import legacy.image_metadata as image_metadata
         from PIL import Image
         import io
         

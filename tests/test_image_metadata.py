@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from image_metadata import extract_image_metadata, format_metadata_for_display
+from legacy.image_metadata import extract_image_metadata, format_metadata_for_display
 from PIL import Image
 
 

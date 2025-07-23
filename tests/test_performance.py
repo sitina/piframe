@@ -12,7 +12,7 @@ from unittest.mock import patch, MagicMock, mock_open
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import monitor_performance
+import legacy.monitor_performance as monitor_performance
 
 
 class TestPerformanceMonitoring(unittest.TestCase):
