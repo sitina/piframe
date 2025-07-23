@@ -1,421 +1,332 @@
 """
-The application serves random photo from google photos album
-Optimized for Raspberry Pi performance
+Refactored PiFrame Flask application.
+Clean separation of concerns using service architecture.
 """
-# Standard library imports
-import io
-import json
-import os
-import pickle
-import random
-import time
-import threading
-from datetime import datetime, timedelta
-from functools import wraps
 
-# Third-party imports
-from dateutil import parser
-from flask import Flask, Response, render_template, request, jsonify
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-import matplotlib
-matplotlib.use('Agg')  # Use non-interactive backend for better performance
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.figure import Figure
-import requests
+import argparse
+import signal
+import sys
+from typing import Optional
 
-# Local imports
-import drive_pictures
+from flask import Flask, Response, render_template, jsonify
 
-# Global variables
-album = ''
-app = Flask(__name__, static_folder='static')
+from piframe.config import Config
+from piframe.utils import setup_logging, get_logger
+from piframe.services import WeatherService, DriveService, ImageService
+from piframe.models import get_cache_manager
+from piframe.background import BackgroundTaskManager
+from piframe.background.tasks import create_standard_tasks
 
-# Enhanced caching with longer TTL for Raspberry Pi
-weather_cache = {
-    'ts': 0, 
-    'forecast_ts': 0, 
-    'data': None, 
-    'forecast': None,
-    'forecast_chart': None,
-    'forecast_chart_ts': 0
-}
 
-# Cache TTLs (in seconds) - longer for Raspberry Pi to reduce API calls
-WEATHER_CACHE_TTL = 600  # 10 minutes instead of 5
-FORECAST_CACHE_TTL = 1800  # 30 minutes instead of 5
-CHART_CACHE_TTL = 3600  # 1 hour for chart generation
-
-# Background task for preloading data
-def background_data_refresh():
-    """Background task to refresh weather data periodically"""
-    while True:
-        try:
-            # Refresh weather data in background
-            get_weather(force_refresh=True)
-            get_forecast(force_refresh=True)
-            time.sleep(background_refresh_interval)  # Use configured interval
-        except Exception as e:
-            print(f"Background refresh error: {e}")
-            time.sleep(error_retry_interval)  # Use configured error retry interval
-
-def start_background_tasks():
-    """Start background tasks in separate thread"""
-    refresh_thread = threading.Thread(target=background_data_refresh, daemon=True)
-    refresh_thread.start()
-
-def get_weather(force_refresh=False):
-    """Get weather data with enhanced caching"""
-    ts = time.time()
-    if force_refresh or ts - weather_cache['ts'] > WEATHER_CACHE_TTL:
-        if weather_api_key:
-            try:
-                weather_url = f"http://api.openweathermap.org/data/2.5/weather?appid={weather_api_key}&q={weather_location}"
-                weather_data = requests.get(weather_url, timeout=10).json()
-                weather_cache['ts'] = ts
-                weather_cache['data'] = weather_data
-                return weather_data
-            except Exception as e:
-                print(f"Weather API error: {e}")
-                # Return cached data if available, even if expired
-                if weather_cache['data']:
-                    return weather_cache['data']
-                return None
-    return weather_cache['data']
-
-def get_forecast(force_refresh=False):
-    """Get forecast data with enhanced caching"""
-    print('getting forecast')
-    forecast_file = 'forecast.json'
-    lon = 14.4936
-    lat = 50.1267
-    ts = time.time()
+class PiFrameApp:
+    """Main PiFrame application class."""
     
-    if force_refresh or ts - weather_cache['forecast_ts'] > FORECAST_CACHE_TTL:
-        if os.path.isfile(forecast_file):
-            with open(forecast_file) as f:
-                print('fetching weather data from file')
-                data = json.load(f)
-                weather_cache['forecast_ts'] = ts
-                weather_cache['forecast'] = data
-                return data
-        elif weather_api_key:
-            try:
-                print('getting forecast via api')
-                weather_url = f"http://api.openweathermap.org/data/2.5/forecast?appid={weather_api_key}&lat={lat}&lon={lon}"
-                weather_data = requests.get(weather_url, timeout=15).json()
-                weather_cache['forecast_ts'] = ts
-                weather_cache['forecast'] = weather_data
-                return weather_data
-            except Exception as e:
-                print(f"Forecast API error: {e}")
-                if weather_cache['forecast']:
-                    return weather_cache['forecast']
-                return None
-    else:
-        print('using weather cache')
-        return weather_cache['forecast']
-
-@app.route("/")
-def home():
-    return get_fullscreen()
-
-def to_celsius(original):
-    return round(original - 273.15, 1)
-
-def process_forecast(forecast_data):
-    """Process forecast data with caching"""
-    if not forecast_data or 'list' not in forecast_data:
-        return []
-    
-    result = []
-    for item in forecast_data['list']:
-        temp = to_celsius(item['main']['temp'])
-        feels_like = to_celsius(item['main']['feels_like'])
-        humidity = item['main']['humidity']
-        weather = item['weather'][0]['main']
-        dt = item['dt_txt']
-        tt = item['dt_txt'][11:]
-        icon = '/static/images/' + item['weather'][0]['icon'] + '@2x.gif'
-        result.append({
-            'dt': dt,
-            'temp': temp,
-            'feels_like': feels_like,
-            'weather': weather,
-            'humidity': humidity,
-            'icon': icon,
-            'time': tt[:2],
-        })
-    return result
-
-@app.route('/weather/forecast.png')
-def plot_png():
-    """Serve forecast chart with enhanced caching"""
-    ts = time.time()
-    if ts - weather_cache['forecast_chart_ts'] > CHART_CACHE_TTL or not weather_cache['forecast_chart']:
-        try:
-            fig = create_figure()
-            output = io.BytesIO()
-            FigureCanvas(fig).print_png(output)
-            weather_cache['forecast_chart'] = output.getvalue()
-            weather_cache['forecast_chart_ts'] = ts
-            plt.close(fig)  # Close figure to free memory
-        except Exception as e:
-            print(f"Chart generation error: {e}")
-            return "Chart generation failed", 500
-
-    return Response(weather_cache['forecast_chart'], mimetype='image/png')
-
-def create_figure():
-    """Create forecast chart with optimized settings"""
-    # Use smaller figure size for better performance
-    fig = Figure(figsize=(8, 4), dpi=72)
-    fig.patch.set_alpha(0.3)
-    axis = fig.add_subplot(1, 1, 1, facecolor="none")
-
-    forecast_data = get_forecast()
-    forecast = process_forecast(forecast_data)
-    
-    if not forecast:
-        return fig
-
-    # Optimize data processing
-    xs = [f['dt'][:13][8:] for f in forecast]
-    xticks = [f['dt'][:13][11:] for f in forecast]
-    ys1 = [f['temp'] for f in forecast]
-    ys2 = [f['feels_like'] for f in forecast]
-
-    axis.plot(xs, ys1, color='red', label='forecast', linewidth=1)
-    axis.plot(xs, ys2, color='blue', label='feels like', linewidth=1)
-    axis.legend(loc='best', fontsize=8)
-    axis.set_xticks(xs)
-    axis.set_xticklabels(xticks, fontsize=8)
-    axis.tick_params(axis='x', rotation=90)
-
-    # Optimize day separator lines
-    for val in xs:
-        if val[3:] == '00':
-            axis.axvline(x=val, color='black', alpha=0.3, linewidth=0.5)
-
-    return fig
-
-@app.route("/weather")
-def weather_view():
-    """Weather view with optimized data fetching"""
-    weather = get_weather()
-    forecast_data = get_forecast()
-    forecast = process_forecast(forecast_data)
-    
-    if not weather:
-        return "Weather data unavailable", 503
-    
-    temperature = to_celsius(weather['main']['temp'])
-    feels_like = to_celsius(weather['main']['feels_like'])
-    weather_type = weather['weather'][0]['main']
-
-    return render_template(
-        'weather.html',
-        temperature=temperature,
-        feels_like=feels_like,
-        weather_type=weather_type,
-        forecast=forecast[:6]  # Only first 6 items
-    )
-
-@app.route("/picture")
-def get_picture():
-    """Picture view with optimized data fetching and metadata"""
-    from flask import request
-    
-    weather = get_weather()
-    forecast_data = get_forecast()
-    forecast = process_forecast(forecast_data)
-    
-    if not weather:
-        return "Weather data unavailable", 503
-    
-    temperature = to_celsius(weather['main']['temp'])
-    feels_like = to_celsius(weather['main']['feels_like'])
-    weather_type = weather['weather'][0]['main']
-
-    # Check if we should force a new image (timestamp parameter present)
-    force_new = 't' in request.args
-    
-    # Get image metadata
-    try:
-        response = drive_pictures.serve_random_image(force_new=force_new, include_metadata=True)
-        metadata = {
-            'creation_date': response.headers.get('X-Image-Date', 'Unknown'),
-            'creation_time': response.headers.get('X-Image-Time', 'Unknown'),
-            'camera_info': response.headers.get('X-Camera-Info', 'Unknown'),
-            'dimensions': response.headers.get('X-Image-Dimensions', 'Unknown')
-        }
-    except Exception as e:
-        print(f"Error getting metadata: {e}")
-        metadata = {
-            'creation_date': 'Unknown',
-            'creation_time': 'Unknown',
-            'camera_info': 'Unknown',
-            'dimensions': 'Unknown'
-        }
-
-    return render_template(
-        'picture.html',
-        picture='/random-picture/new' if force_new else '/random-picture',
-        temperature=temperature,
-        feels_like=feels_like,
-        weather_type=weather_type,
-        forecast=forecast[:6],  # Only first 6 items
-        creation_date=metadata['creation_date'],
-        creation_time=metadata['creation_time'],
-        camera_info=metadata['camera_info'],
-        dimensions=metadata['dimensions']
-    )
-
-@app.route("/fullscreen")
-def get_fullscreen():
-    return render_template('fullscreen.html', refresh_interval=frontend_refresh_interval)
-
-@app.route("/random-picture")
-def get_random_picture():
-    return drive_pictures.serve_random_image()
-
-@app.route("/random-picture/new")
-def get_new_random_picture():
-    """Force a new random picture by bypassing cache"""
-    return drive_pictures.serve_random_image(force_new=True)
-
-@app.route("/random-picture/metadata")
-def get_random_picture_metadata():
-    """Get metadata for a random picture"""
-    
-    # Get a random image with metadata
-    response = drive_pictures.serve_random_image(include_metadata=True)
-    
-    # Extract metadata from response headers
-    metadata = {
-        'creation_date': response.headers.get('X-Image-Date', 'Unknown'),
-        'creation_time': response.headers.get('X-Image-Time', 'Unknown'),
-        'camera_info': response.headers.get('X-Camera-Info', 'Unknown'),
-        'dimensions': response.headers.get('X-Image-Dimensions', 'Unknown')
-    }
-    
-    return jsonify(metadata)
-
-# Configuration loading
-try:
-    with open("config.json", "r") as f:
-        print('loading config')
-        config = json.load(f)
-        album = config['album']
-        weather_api_key = config['weather_api_key']
-        weather_location = config['weather_location']
+    def __init__(self, config: Config):
+        """Initialize the application with configuration."""
+        self.config = config
+        self.logger = get_logger(__name__)
         
-        # Load refresh intervals from config with defaults
-        background_refresh_interval = config.get('background_refresh_interval', 300)  # 5 minutes default
-        error_retry_interval = config.get('error_retry_interval', 60)  # 1 minute default
-        frontend_refresh_interval = config.get('frontend_refresh_interval', 30)  # 30 seconds default
+        # Initialize Flask app
+        self.app = Flask(__name__, static_folder='static')
+        self._setup_flask_config()
         
-        print(album)
-except FileNotFoundError:
-    print('loading config failed')
-    album = ''
-    weather_api_key = None
-    weather_location = None
-    background_refresh_interval = 300  # 5 minutes default
-    error_retry_interval = 60  # 1 minute default
-    frontend_refresh_interval = 30  # 30 seconds default
-    config = {
-        "album": album,
-        "weather_api_key": "",
-        "weather_location": "",
-        "background_refresh_interval": background_refresh_interval,
-        "error_retry_interval": error_retry_interval,
-        "frontend_refresh_interval": frontend_refresh_interval
-    }
-    config_json = json.dumps(config, indent=2)
-    with open("config.json", "w") as jsonfile:
-        jsonfile.write(config_json)
-        print("config template written to config file")
-
-# Start background tasks
-start_background_tasks()
-
-if __name__ == '__main__':
-    """
-    Optimized startup for Raspberry Pi performance
-    """
-    import argparse
-    import logging
-    import signal
-    import sys
+        # Initialize services
+        self.cache_manager = get_cache_manager(config)
+        self.weather_service = WeatherService(config, self.cache_manager)
+        self.drive_service = DriveService(config, self.cache_manager)
+        self.image_service = ImageService(config, self.drive_service, self.cache_manager)
+        
+        # Background task manager (will be initialized later)
+        self.task_manager: Optional[BackgroundTaskManager] = None
+        
+        # Register routes
+        self._register_routes()
+        
+        self.logger.info("PiFrame application initialized")
     
+    def _setup_flask_config(self) -> None:
+        """Configure Flask application settings."""
+        self.app.config['SECRET_KEY'] = 'piframe-secret-key'  # Should be from config in production
+        self.app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 300  # 5 minutes cache
+        self.app.config['TEMPLATES_AUTO_RELOAD'] = False
+    
+    def _register_routes(self) -> None:
+        """Register all Flask routes."""
+        
+        @self.app.route("/")
+        def home():
+            """Home page - redirects to fullscreen."""
+            return self.get_fullscreen()
+        
+        @self.app.route("/fullscreen")
+        def fullscreen():
+            """Fullscreen photo display."""
+            return self.get_fullscreen()
+        
+        @self.app.route("/weather")
+        def weather():
+            """Weather information only."""
+            return self.get_weather()
+        
+        @self.app.route("/picture")
+        def picture():
+            """Photo display with weather overlay."""
+            return self.get_picture()
+        
+        @self.app.route("/random-picture")
+        def random_picture():
+            """Serve a random image."""
+            return self.image_service.serve_random_image()
+        
+        @self.app.route("/random-picture/new")
+        def new_random_picture():
+            """Force a new random image."""
+            return self.image_service.serve_random_image(force_new=True)
+        
+        @self.app.route("/random-picture/metadata")
+        def random_picture_metadata():
+            """Get metadata for a random picture."""
+            metadata = self.image_service.get_random_image_metadata()
+            return jsonify(metadata)
+        
+        @self.app.route("/random-picture/synchronized")
+        def synchronized_random_picture():
+            """Get synchronized random picture (for metadata consistency)."""
+            return self.image_service.serve_synchronized_image()
+        
+        @self.app.route("/weather/forecast.png")
+        def forecast_chart():
+            """Weather forecast chart."""
+            chart_data = self.weather_service.generate_forecast_chart()
+            if chart_data:
+                return Response(chart_data, mimetype='image/png')
+            else:
+                return Response("Chart generation failed", status=500, mimetype='text/plain')
+    
+    def get_fullscreen(self):
+        """Render fullscreen template."""
+        return render_template('fullscreen.html', 
+                             refresh_interval=self.config.frontend_refresh_interval)
+    
+    def get_weather(self):
+        """Render weather template."""
+        weather_data = self.weather_service.get_current_weather()
+        if not weather_data:
+            return Response("Weather data unavailable", status=503, mimetype='text/plain')
+        
+        forecast_data = self.weather_service.get_forecast()
+        forecast = self.weather_service.process_forecast_data(forecast_data) if forecast_data else []
+        
+        temperature = self.weather_service.to_celsius(weather_data['main']['temp'])
+        feels_like = self.weather_service.to_celsius(weather_data['main']['feels_like'])
+        weather_type = weather_data['weather'][0]['main']
+        
+        return render_template(
+            'weather.html',
+            temperature=temperature,
+            feels_like=feels_like,
+            weather_type=weather_type,
+            forecast=forecast[:6]  # First 6 items
+        )
+    
+    def get_picture(self):
+        """Render picture template with weather overlay."""
+        weather_data = self.weather_service.get_current_weather()
+        if not weather_data:
+            return Response("Weather data unavailable", status=503, mimetype='text/plain')
+        
+        forecast_data = self.weather_service.get_forecast()
+        forecast = self.weather_service.process_forecast_data(forecast_data) if forecast_data else []
+        
+        temperature = self.weather_service.to_celsius(weather_data['main']['temp'])
+        feels_like = self.weather_service.to_celsius(weather_data['main']['feels_like'])
+        weather_type = weather_data['weather'][0]['main']
+        
+        return render_template(
+            'picture.html',
+            temperature=temperature,
+            feels_like=feels_like,
+            weather_type=weather_type,
+            forecast=forecast[:6]  # First 6 items
+        )
+    
+    def start_background_tasks(self, enabled: bool = True) -> None:
+        """Start background tasks."""
+        if enabled:
+            self.task_manager = create_standard_tasks(
+                self.weather_service,
+                self.drive_service,
+                self.image_service,
+                self.config
+            )
+            self.task_manager.start_all()
+            self.logger.info("Background tasks started")
+        else:
+            self.logger.info("Background tasks disabled")
+    
+    def stop_background_tasks(self) -> None:
+        """Stop background tasks."""
+        if self.task_manager:
+            self.task_manager.stop_all()
+            self.logger.info("Background tasks stopped")
+    
+    def close(self) -> None:
+        """Clean up application resources."""
+        self.stop_background_tasks()
+        self.weather_service.close()
+        self.drive_service.close()
+        self.image_service.close()
+        self.logger.info("Application closed")
+    
+    def run(self, host: str = None, port: int = None, debug: bool = False, 
+            use_reloader: bool = False) -> None:
+        """Run the Flask application."""
+        if host is None:
+            host = self.config.default_host
+        if port is None:
+            port = self.config.default_port
+        
+        try:
+            self.logger.info(f"Starting Flask server on {host}:{port} (debug: {debug})")
+            self.app.run(
+                host=host,
+                port=port,
+                debug=debug,
+                threaded=True,
+                use_reloader=use_reloader
+            )
+        except KeyboardInterrupt:
+            self.logger.info("Application stopped by user")
+        except Exception as e:
+            self.logger.error(f"Application error: {e}")
+            raise
+        finally:
+            self.close()
+
+
+def main():
+    """Main entry point."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='PiFrame - Digital Photo Frame with Weather')
-    parser.add_argument('--port', type=int, default=5001, help='Port to run on (default: 5001)')
-    parser.add_argument('--host', type=str, default='0.0.0.0', help='Host to bind to (default: 0.0.0.0)')
+    parser.add_argument('--config', type=str, default='config.json',
+                       help='Configuration file path (default: config.json)')
+    parser.add_argument('--port', type=int, help='Port to run on (overrides config)')
+    parser.add_argument('--host', type=str, help='Host to bind to (overrides config)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
-    parser.add_argument('--no-background', action='store_true', help='Disable background tasks')
+    parser.add_argument('--no-background', action='store_true', 
+                       help='Disable background tasks')
+    parser.add_argument('--log-level', type=str, default='INFO',
+                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                       help='Logging level (default: INFO)')
     
     args = parser.parse_args()
     
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler('piframe.log'),
-            logging.StreamHandler(sys.stdout)
-        ]
+    # Load configuration
+    try:
+        config = Config.load(args.config)
+        config.validate()
+    except Exception as e:
+        print(f"Configuration error: {e}")
+        return 1
+    
+    # Setup logging
+    setup_logging(
+        log_file=config.log_file,
+        log_level=args.log_level,
+        enable_console=True
     )
     
-    logger = logging.getLogger(__name__)
-    logger.info("Starting PiFrame application...")
-    logger.info("Optimized for Raspberry Pi performance")
+    logger = get_logger(__name__)
+    logger.info("Starting PiFrame application")
+    logger.info("Optimized modular architecture")
     
-    # Graceful shutdown handler
+    # Override config with command line args
+    if args.port:
+        config.default_port = args.port
+    if args.host:
+        config.default_host = args.host
+    
+    # Create and configure application
+    app = PiFrameApp(config)
+    
+    # Configure Flask for debug/production
+    if args.debug:
+        app.app.config['DEBUG'] = True
+        logger.info("Running in debug mode")
+    else:
+        app.app.config['DEBUG'] = False
+        app.app.config['TESTING'] = False
+        logger.info("Running in production mode")
+    
+    # Setup graceful shutdown
     def signal_handler(signum, frame):
         logger.info(f"Received signal {signum}, shutting down gracefully...")
+        app.close()
         sys.exit(0)
     
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
     
-    # Disable background tasks if requested
-    if args.no_background:
-        logger.info("Background tasks disabled")
-    else:
-        logger.info("Background tasks enabled")
+    # Start background tasks
+    app.start_background_tasks(enabled=not args.no_background)
     
-    # Configure Flask for production
-    if not args.debug:
-        app.config['DEBUG'] = False
-        app.config['TESTING'] = False
-        
-        # Production optimizations
-        app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 300  # 5 minutes cache
-        app.config['TEMPLATES_AUTO_RELOAD'] = False
-        
-        logger.info("Running in production mode")
-    else:
-        app.config['DEBUG'] = True
-        logger.info("Running in debug mode")
-    
+    # Run the application
     try:
-        # Start the Flask application
-        logger.info(f"Starting server on {args.host}:{args.port}")
         app.run(
-            host=args.host,
-            port=args.port,
             debug=args.debug,
-            threaded=True,
-            use_reloader=False  # Disable reloader for production
+            use_reloader=args.debug  # Only use reloader in debug mode
         )
-    except KeyboardInterrupt:
-        logger.info("Application stopped by user")
+        return 0
     except Exception as e:
-        logger.error(f"Application error: {e}")
-        sys.exit(1)
+        logger.error(f"Failed to start application: {e}")
+        return 1
+
+
+# Flask application factory for compatibility with 'flask run'
+def create_app(config_path='config.json', start_background_tasks=False):
+    """
+    Create and configure Flask application instance.
+    This function allows the app to be discovered by 'flask run'.
+    
+    Args:
+        config_path: Path to config file
+        start_background_tasks: Whether to start background tasks (default: False for flask run)
+    """
+    try:
+        config = Config.load(config_path)
+        # Setup basic logging for flask run (less verbose)
+        setup_logging(
+            log_file=config.log_file,
+            log_level='WARNING',  # Less verbose for flask run
+            enable_console=True
+        )
+        
+        piframe_app = PiFrameApp(config)
+        
+        # Only start background tasks if explicitly requested
+        if start_background_tasks:
+            piframe_app.start_background_tasks(enabled=True)
+        
+        return piframe_app.app
+    except Exception as e:
+        print(f"Failed to create app: {e}")
+        raise
+
+
+# Create default app instance for flask run (without background tasks)
+# Background tasks will be started by flask run environment
+app = None
+
+def get_flask_app():
+    """Lazy initialization of Flask app for flask run."""
+    global app
+    if app is None:
+        app = create_app(start_background_tasks=False)
+    return app
+
+# For flask run compatibility
+app = get_flask_app()
+
+
+if __name__ == '__main__':
+    sys.exit(main())

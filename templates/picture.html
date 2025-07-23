@@ -83,28 +83,63 @@
     </style>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <script>
-        // Add cache-busting timestamp to image URL
+        function updateImageAndMetadata() {
+            fetch('/random-picture/metadata')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Update image source
+                    var img = document.querySelector('.fullScreenPhoto');
+                    if (img) {
+                        img.src = data.picture_url;
+                    }
+
+                    // Update metadata
+                    var creationDateEl = document.getElementById('creation-date');
+                    var creationTimeEl = document.getElementById('creation-time');
+                    var cameraInfoEl = document.getElementById('camera-info');
+                    var dimensionsEl = document.getElementById('dimensions');
+
+                    if (creationDateEl) creationDateEl.innerText = data.creation_date || 'Unknown';
+                    if (creationTimeEl) creationTimeEl.innerText = data.creation_time || 'Unknown';
+                    if (cameraInfoEl) cameraInfoEl.innerText = data.camera_info || 'Unknown';
+                    if (dimensionsEl) dimensionsEl.innerText = data.dimensions || 'Unknown';
+
+                    // Show metadata frame
+                    var metadataFrame = document.querySelector('.metadataFrame');
+                    if (metadataFrame) {
+                        metadataFrame.style.display = 'inline-block';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching new image and metadata:', error);
+                    // Hide metadata frame on error
+                    var metadataFrame = document.querySelector('.metadataFrame');
+                    if (metadataFrame) {
+                        metadataFrame.style.display = 'none';
+                    }
+                });
+        }
+
         window.onload = function () {
-            var img = document.querySelector('.fullScreenPhoto');
-            if (img) {
-                var timestamp = new Date().getTime();
-                img.src = img.src + '?t=' + timestamp;
-            }
+            updateImageAndMetadata();
+            // Refresh every 30 seconds
+            setInterval(updateImageAndMetadata, 30000);
         };
     </script>
 </head>
 
 <body>
-    <img src="{{ picture }}" class="fullScreenPhoto" alt="{{ picture }}" />
+    <img src="" class="fullScreenPhoto" alt="Random photo" />
     <div class="infoFrame">
-        <h1>{{ creation_date }}</h1>
-        {{ creation_time }}<br />
+        <h1 id="creation-date"></h1>
+        <span id="creation-time"></span><br />
         <h1>{{ temperature }}°C</h1>
         FL {{ feels_like }}°C / {{ weather_type }}
-    </div>
-    <div class="metadataFrame" style="display: none;">
-        <div class="metadata-item"><strong>Camera:</strong> {{ camera_info }}</div>
-        <div class="metadata-item"><strong>Size:</strong> {{ dimensions }}</div>
     </div>
     <div class="weatherFrame">
         <table>
@@ -126,6 +161,20 @@
         <img src="/weather/forecast.png" alt="forecast trendline" style="width: 100%" />
     </div>
 
+    <div class="metadataFrame" style="display: none;">
+        <div class="metadata-item">
+            <strong>Date:</strong> <span id="creation-date">Loading...</span>
+        </div>
+        <div class="metadata-item">
+            <strong>Time:</strong> <span id="creation-time">Loading...</span>
+        </div>
+        <div class="metadata-item">
+            <strong>Camera:</strong> <span id="camera-info">Loading...</span>
+        </div>
+        <div class="metadata-item">
+            <strong>Dimensions:</strong> <span id="dimensions">Loading...</span>
+        </div>
+    </div>
 
 </body>
 

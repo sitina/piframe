@@ -8,5 +8,8 @@ if [ ! -d "venv/" ]; then
 fi
 
 source venv/bin/activate
-flask run --host=0.0.0.0 --port=81
+
+# Use the new CLI interface for better control
+python app.py --host=0.0.0.0 --port=81
+
 deactivate

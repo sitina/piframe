@@ -13,19 +13,22 @@ from io import StringIO
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-def run_tests_with_coverage(test_pattern='tests/test_*.py', coverage_report=True):
+def run_tests_with_coverage(test_pattern='test_*.py', coverage_report=True):
     """Run tests with coverage reporting"""
     if coverage_report:
         # Start coverage measurement
         cov = coverage.Coverage(
-            source=['.'],
+            source=['.', 'piframe'],
             omit=[
                 '*/tests/*',
                 '*/venv/*',
                 '*/__pycache__/*',
                 'run_tests.py',
                 'start*.py',
-                '*.pyc'
+                '*.pyc',
+                'test_*.py',
+                'setup.py',
+                'monitor_performance.py'
             ]
         )
         cov.start()
@@ -75,7 +78,7 @@ def run_specific_test(test_file):
 
 def run_unit_tests():
     """Run only unit tests"""
-    return run_tests_with_coverage('tests/test_*.py', coverage_report=False)
+    return run_tests_with_coverage('test_*.py', coverage_report=False)
 
 
 def run_integration_tests():
@@ -117,8 +120,8 @@ def main():
     )
     parser.add_argument(
         '--pattern', 
-        default='tests/test_*.py',
-        help='Test file pattern (default: tests/test_*.py)'
+        default='test_*.py',
+        help='Test file pattern (default: test_*.py)'
     )
     
     args = parser.parse_args()

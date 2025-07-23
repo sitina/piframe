@@ -366,6 +366,9 @@ def serve_random_image(force_new=False, include_metadata=False):
         response.headers['Expires'] = '0'
         response.headers['ETag'] = f'"{random_file["id"]}_{int(time.time())}"'
         
+        # Add image ID to response headers for synchronization
+        response.headers['X-Image-ID'] = random_file['id']
+        
         # Add metadata to response headers if available
         if metadata_info and metadata_info['display_info']:
             display = metadata_info['display_info']
@@ -468,3 +471,65 @@ def get_image_metadata(file_id, file_data):
             'display_info': default_info,
             'ts': time.time()
         }
+
+def serve_image_by_id(file_id):
+    """Serve a specific image by its ID with metadata."""
+    try:
+        # Get file info from cache or fetch it
+        files = list_images_in_folder()
+        target_file = None
+        
+        for file in files:
+            if file['id'] == file_id:
+                target_file = file
+                break
+        
+        if not target_file:
+            print(f"Image with ID {file_id} not found")
+            return "Image not found", 404
+        
+        print(f"Serving specific image: {target_file['name']} (ID: {target_file['id']})")
+        
+        # Download the file
+        file_data = download_file(target_file['id'])
+        
+        if not file_data:
+            print(f"Failed to download file: {target_file['id']}")
+            return "Error downloading file", 500
+        
+        # Extract metadata
+        metadata_info = get_image_metadata(target_file['id'], file_data)
+        
+        # Create response
+        response = send_file(
+            file_data,
+            mimetype=target_file['type'],
+            as_attachment=False,
+            download_name=target_file['name']
+        )
+        
+        # Add cache headers
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        response.headers['ETag'] = f'"{target_file["id"]}_{int(time.time())}"'
+        
+        # Add image ID to response headers
+        response.headers['X-Image-ID'] = target_file['id']
+        
+        # Add metadata to response headers if available
+        if metadata_info and metadata_info['display_info']:
+            display = metadata_info['display_info']
+            response.headers['X-Image-Date'] = display.get('creation_date', 'Unknown')
+            response.headers['X-Image-Time'] = display.get('creation_time', 'Unknown')
+            response.headers['X-Camera-Info'] = display.get('camera_info', 'Unknown')
+            response.headers['X-Image-Dimensions'] = display.get('dimensions', 'Unknown')
+        
+        print(f"Successfully served specific image: {target_file['name']}")
+        return response
+        
+    except Exception as e:
+        print(f"Error in serve_image_by_id: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return "Internal server error", 500

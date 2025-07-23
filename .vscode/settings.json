@@ -18,7 +18,7 @@
     "python.linting.lintOnType": true,
     "editor.formatOnSave": true,
     "editor.codeActionsOnSave": {
-        "source.organizeImports": true
+        "source.organizeImports": "explicit"
     },
     "python.sortImports.args": [
         "--profile=black",

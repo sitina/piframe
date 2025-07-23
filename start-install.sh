@@ -9,5 +9,8 @@ fi
 
 source venv/bin/activate
 pip3 install -U -r requirements.txt
-flask run --host=0.0.0.0 --port=81
+
+# Use the new CLI interface with better error handling
+python app.py --host=0.0.0.0 --port=81
+
 deactivate

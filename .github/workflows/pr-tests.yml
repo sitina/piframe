@@ -1,0 +1,99 @@
+name: PR Tests (Fast)
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened]
+
+jobs:
+  quick-test:
+    runs-on: ubuntu-latest
+    name: Quick validation tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Test core imports and initialization
+      run: |
+        python -c "
+        import sys
+        sys.path.insert(0, '.')
+        
+        # Test all core imports work
+        from piframe.config.settings import Config
+        from piframe.models.cache import CacheManager, TTLCache
+        from piframe.services.weather_service import WeatherService
+        from piframe.services.drive_service import DriveService
+        from piframe.services.image_service import ImageService
+        
+        # Test basic functionality
+        config = Config()
+        cache_manager = CacheManager(config)
+        
+        # Test cache operations
+        cache_manager.set('test', 'key', 'value')
+        assert cache_manager.get('test', 'key') == 'value'
+        
+        print('✅ Core functionality verified')
+        "
+
+    - name: Run new architecture unit tests (fast)
+      run: |
+        # Run only the fastest, most critical tests
+        python -m unittest \
+          tests.test_cache_manager.TestTTLCache.test_set_and_get_basic \
+          tests.test_cache_manager.TestTTLCache.test_lru_eviction \
+          tests.test_cache_manager.TestCacheManager.test_get_set_delete_operations \
+          tests.test_weather_service.TestWeatherService.test_init \
+          tests.test_weather_service.TestWeatherService.test_to_celsius \
+          tests.test_weather_service.TestWeatherService.test_process_forecast_data_success \
+          tests.test_drive_service.TestDriveService.test_init \
+          tests.test_drive_service.TestDriveService.test_constants \
+          tests.test_image_service.TestImageService.test_init \
+          -v
+
+    - name: Test legacy compatibility
+      run: |
+        python -c "
+        import sys
+        sys.path.insert(0, '.')
+        
+        # Ensure old modules still work
+        import drive_pictures
+        import image_metadata
+        import monitor_performance
+        
+        # Test performance monitor
+        monitor = monitor_performance.PerformanceMonitor()
+        stats = monitor.get_system_stats()
+        
+        print('✅ Legacy compatibility maintained')
+        "
+
+    - name: Syntax and import check
+      run: |
+        python -m py_compile piframe/**/*.py
+        python -c "
+        import sys
+        sys.path.insert(0, '.')
+        
+        # Test that all test files can be imported
+        import tests.test_cache_manager
+        import tests.test_weather_service
+        import tests.test_drive_service
+        import tests.test_image_service
+        
+        print('✅ All test modules import successfully')
+        "

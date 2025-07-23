@@ -1,0 +1,174 @@
+name: Health Check
+
+on:
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+  workflow_dispatch:
+  push:
+    paths:
+      - 'requirements.txt'
+      - 'pyproject.toml'
+
+jobs:
+  dependency-check:
+    runs-on: ubuntu-latest
+    name: Dependency health check
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pip-audit safety bandit
+
+    - name: Check for security vulnerabilities
+      run: |
+        # Check for known security vulnerabilities
+        pip-audit --desc --format=json --output=security-report.json || echo "Security scan completed"
+        safety check --json --output=safety-report.json || echo "Safety check completed"
+      continue-on-error: true
+
+    - name: Static security analysis
+      run: |
+        # Run bandit security linter on Python code
+        bandit -r piframe/ --format json --output bandit-report.json || echo "Bandit scan completed"
+      continue-on-error: true
+
+    - name: Test import health
+      run: |
+        python -c "
+        import sys
+        sys.path.insert(0, '.')
+        
+        # Test all critical imports
+        try:
+            from piframe.config.settings import Config
+            from piframe.models.cache import CacheManager
+            from piframe.services.weather_service import WeatherService
+            from piframe.services.drive_service import DriveService
+            from piframe.services.image_service import ImageService
+            print('✅ All imports successful')
+        except ImportError as e:
+            print(f'❌ Import error: {e}')
+            sys.exit(1)
+        
+        # Test basic functionality
+        config = Config()
+        cache_manager = CacheManager(config)
+        print('✅ Basic initialization works')
+        "
+
+    - name: Performance baseline test
+      run: |
+        python -c "
+        import sys, time
+        sys.path.insert(0, '.')
+        from piframe.models.cache import TTLCache
+        
+        # Performance test for cache operations
+        start_time = time.time()
+        cache = TTLCache(max_size=1000, default_ttl=60)
+        
+        # Perform 1000 operations
+        for i in range(1000):
+            cache.set(f'key_{i}', f'value_{i}')
+            cache.get(f'key_{i}')
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        print(f'Cache performance: 2000 ops in {duration:.3f}s ({2000/duration:.0f} ops/sec)')
+        
+        if duration > 5.0:  # Should complete in under 5 seconds
+            print('⚠️ Performance degradation detected')
+        else:
+            print('✅ Performance within acceptable range')
+        "
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          security-report.json
+          safety-report.json
+          bandit-report.json
+        retention-days: 7
+
+  compatibility-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.9", "3.12"]
+      fail-fast: false
+    
+    name: Cross-platform test (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install dependencies (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Install dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Test core functionality
+      run: |
+        python -c "
+        import sys, os
+        sys.path.insert(0, '.')
+        
+        # Test that core modules work cross-platform
+        from piframe.models.cache import TTLCache, CacheManager
+        from piframe.config.settings import Config
+        
+        # Test cache system
+        cache = TTLCache(max_size=10, default_ttl=60)
+        cache.set('test', 'value')
+        assert cache.get('test') == 'value'
+        
+        # Test configuration
+        config = Config()
+        cache_manager = CacheManager(config)
+        
+        print(f'✅ Core functionality works on {os.name} platform')
+        "
+
+    - name: Test legacy modules
+      run: |
+        python -c "
+        import sys
+        sys.path.insert(0, '.')
+        
+        # Test legacy modules still work
+        import monitor_performance
+        
+        monitor = monitor_performance.PerformanceMonitor()
+        stats = monitor.get_system_stats()
+        
+        print('✅ Legacy modules compatible')
+        "
