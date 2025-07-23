@@ -10,7 +10,7 @@ Group=pi
 WorkingDirectory=/home/pi/piframe
 Environment=PYTHONPATH=/home/pi/piframe
 Environment=FLASK_ENV=production
-ExecStart=/home/pi/piframe/venv/bin/python start_optimized.py
+ExecStart=/home/pi/piframe/venv/bin/python scripts/start_optimized.py
 Restart=always
 RestartSec=10
 StandardOutput=journal

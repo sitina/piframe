@@ -15,8 +15,8 @@ class Config:
     
     # Google Drive settings
     album_id: str = ""
-    drive_credentials_file: str = "client_secret.json"
-    drive_token_file: str = "token.pickle"
+    drive_credentials_file: str = "config/client_secret.json"
+    drive_token_file: str = "config/token.pickle"
     
     # Weather settings
     weather_api_key: str = ""
@@ -50,11 +50,11 @@ class Config:
     default_port: int = 5001
     
     # File paths
-    config_file: str = "config.json"
-    log_file: str = "piframe.log"
+    config_file: str = "config/config.json"
+    log_file: str = "logs/piframe.log"
     
     @classmethod
-    def load(cls, config_path: str = "config.json") -> 'Config':
+    def load(cls, config_path: str = "config/config.json") -> 'Config':
         """
         Load configuration from file with fallback to defaults.
         Creates config file with defaults if it doesn't exist.

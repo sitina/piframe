@@ -17,7 +17,7 @@ from googleapiclient.http import MediaIoBaseDownload
 import requests
 
 # Local imports
-import image_metadata
+from . import image_metadata
 
 # If modifying these scopes, delete the file token.pickle.
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']

@@ -1,8 +1,34 @@
 venv/
 __pycache__/
-client_secret.json
-token.pickle
-config.json
 .idea
-performance_log*
+
+# Configuration files (sensitive)
+config/client_secret.json
+config/token.pickle
+config/config.json
+
+# Log files and directories
+logs/
 piframe.log
+performance_log*
+
+# Test coverage reports (temporary)
+htmlcov/
+.coverage
+
+# Python artifacts
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.pytest_cache/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

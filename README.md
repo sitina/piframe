@@ -21,7 +21,7 @@ A Flask-based digital photo frame application that displays random photos from G
 ```bash
 git clone <repository-url>
 cd piframe
-./start-install.sh
+./scripts/start-install.sh
 ```
 
 2. **Configure your settings** (choose one method):
@@ -32,7 +32,7 @@ cd piframe
    ```
 
    **Option B: Manual configuration**:
-   - Edit `config.json` and add your Google Drive folder ID:
+   - Edit `config/config.json` and add your Google Drive folder ID:
 ```json
 {
   "album": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
@@ -60,16 +60,16 @@ cd piframe
    - Create a project in [Google Cloud Console](https://console.developers.google.com/)
    - Enable Google Drive API
    - Create OAuth 2.0 credentials
-   - Download as `client_secret.json` to project root
+   - Download as `config/client_secret.json` to the config directory
 
 2. **OpenWeatherMap API** (optional):
    - Get free API key from [OpenWeatherMap](https://openweathermap.org/api)
-   - Add to `config.json`
+   - Add to `config/config.json`
 
 ### Automated Setup
 
 ```bash
-./start-install.sh
+./scripts/start-install.sh
 ```
 
 This script will:
@@ -92,8 +92,8 @@ pip install -r requirements.txt
 
 3. **Configure the application**:
    - **Option A**: Use the interactive setup script: `python setup.py`
-   - **Option B**: Manually edit `config.json` with your settings
-   - Ensure `client_secret.json` is in the project root
+   - **Option B**: Manually edit `config/config.json` with your settings
+   - Ensure `config/client_secret.json` is in the config directory
 
 4. **Run the application**:
 ```bash
@@ -120,7 +120,7 @@ This will guide you through setting up all required configuration options.
 
 ### Manual Configuration
 
-Create or edit `config.json`:
+Create or edit `config/config.json`:
 
 ```json
 {
@@ -204,24 +204,24 @@ sudo systemctl start piframe-optimized
 
 ### Run all tests with coverage:
 ```bash
-python run_tests.py
+python scripts/run_tests.py
 ```
 
 ### Run specific test categories:
 ```bash
 # Unit tests only
-python run_tests.py --unit-only
+python scripts/run_tests.py --unit-only
 
 # Integration tests only  
-python run_tests.py --integration-only
+python scripts/run_tests.py --integration-only
 
 # Performance tests only
-python run_tests.py --performance-only
+python scripts/run_tests.py --performance-only
 ```
 
 ### Test Google Drive connection:
 ```bash
-python test_drive_connection.py
+python scripts/test_drive_connection.py
 ```
 
 ## Troubleshooting
@@ -229,23 +229,23 @@ python test_drive_connection.py
 ### Common Issues
 
 1. **Images not loading**:
-   - Check that `album` field is set in `config.json`
+   - Check that `album` field is set in `config/config.json`
    - Verify the folder ID is correct
    - Ensure you have access to the Google Drive folder
-   - Check that `client_secret.json` is valid
+   - Check that `config/client_secret.json` is valid
 
 2. **Weather not showing**:
-   - Verify `weather_api_key` is set in `config.json`
+   - Verify `weather_api_key` is set in `config/config.json`
    - Check that the API key is valid
    - Ensure `weather_location` is correctly formatted
 
 3. **Port conflicts**:
-   - Default port is 5001, but `start-install.sh` uses port 81
+   - Default port is 5001, but `scripts/start-install.sh` uses port 81
    - Change port using `python app.py --port 8080`
-   - Or modify `start-install.sh` to use a different port
+   - Or modify `scripts/start-install.sh` to use a different port
 
 4. **Google Drive API errors**:
-   - Verify `client_secret.json` exists and is valid
+   - Verify `config/client_secret.json` exists and is valid
    - Check that Google Drive API is enabled in your Google Cloud project
    - Ensure OAuth consent screen is configured
 
@@ -260,7 +260,7 @@ python app.py --debug
 
 Check the application logs:
 ```bash
-tail -f piframe.log
+tail -f logs/piframe.log
 ```
 
 ## Performance Optimizations
@@ -286,6 +286,36 @@ python monitor_performance.py
 4. Add tests for new functionality
 5. Run the test suite
 6. Submit a pull request
+
+## Directory Structure
+
+The project is organized with the following clean structure:
+
+```
+piframe/
+├── app.py                          # Main application
+├── setup.py                        # Interactive configuration
+├── requirements.txt                # Python dependencies
+├── config/                         # All configuration files
+│   ├── config.json                 # Main app configuration
+│   ├── client_secret.json          # Google API credentials
+│   ├── token.pickle                # OAuth token
+│   └── systemd/                    # Systemd service files
+├── scripts/                        # All executable scripts
+│   ├── run_tests.py               # Test runner
+│   ├── start-install.sh           # Quick setup script
+│   ├── start.sh                   # Start script
+│   └── test_*.py                  # Individual test scripts
+├── logs/                           # All log files
+│   ├── piframe.log                # Main application logs
+│   └── performance/               # Performance logs
+├── docs/                          # Documentation
+├── legacy/                        # Legacy/backup files
+├── piframe/                       # Main Python package
+├── tests/                         # Test suite
+├── templates/                     # Flask templates
+└── static/                        # Static assets
+```
 
 ## License
 

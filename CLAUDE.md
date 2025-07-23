@@ -48,7 +48,7 @@ PiFrame is a Flask-based digital photo frame application that displays random ph
 ### Setup and Installation
 ```bash
 # Quick setup (creates venv, installs deps, runs on port 81)
-./start-install.sh
+./scripts/start-install.sh
 
 # Interactive configuration
 python setup.py
@@ -77,18 +77,18 @@ python app.py --no-background
 ### Testing
 ```bash
 # Run all tests with coverage
-python run_tests.py
+python scripts/run_tests.py
 
 # Run specific test categories
-python run_tests.py --unit-only
-python run_tests.py --integration-only
-python run_tests.py --performance-only
+python scripts/run_tests.py --unit-only
+python scripts/run_tests.py --integration-only
+python scripts/run_tests.py --performance-only
 
 # Test Google Drive connection
-python test_drive_connection.py
+python scripts/test_drive_connection.py
 
 # Run specific test file
-python run_tests.py --test-file tests/test_app.py
+python scripts/run_tests.py --test-file tests/test_app.py
 ```
 
 ### Code Quality
@@ -145,7 +145,7 @@ piframe/
 
 **Centralized Configuration**: Single source of truth with validation:
 - Environment variable support (e.g., `PIFRAME_WEATHER_API_KEY`)
-- Backward compatibility with existing config.json
+- Backward compatibility with existing config/config.json
 - Automatic config file generation
 - Configuration validation with helpful error messages
 
@@ -170,7 +170,7 @@ Required settings:
 - `weather_api_key` - OpenWeatherMap API key (optional)
 - `weather_location` - Location string for weather (optional)
 
-**Environment Variable Support** (overrides config.json):
+**Environment Variable Support** (overrides config/config.json):
 - `PIFRAME_ALBUM_ID` - Google Drive folder ID
 - `PIFRAME_WEATHER_API_KEY` - Weather API key  
 - `PIFRAME_WEATHER_LOCATION` - Weather location
@@ -225,7 +225,7 @@ Required settings:
 ## Migration from Original Code
 
 **Backward Compatibility**:
-- Existing `config.json` files continue to work
+- Existing `config/config.json` files continue to work
 - All original API endpoints preserved
 - Same deployment scripts and service files
 - Original `drive_pictures.py` and `image_metadata.py` preserved as fallbacks

@@ -68,7 +68,7 @@ def check_environment():
     # Check required files exist
     required_files = [
         'requirements.txt',
-        'run_tests.py',
+        'scripts/run_tests.py',
         'piframe/__init__.py',
         'tests/test_cache_manager.py',
         'tests/test_weather_service.py',
@@ -94,9 +94,9 @@ def test_imports():
         "from piframe.services.weather_service import WeatherService",
         "from piframe.services.drive_service import DriveService",
         "from piframe.services.image_service import ImageService",
-        "import drive_pictures",
-        "import image_metadata", 
-        "import monitor_performance"
+        "import legacy.drive_pictures",
+        "import legacy.image_metadata", 
+        "import legacy.monitor_performance"
     ]
     
     for import_test in import_tests:

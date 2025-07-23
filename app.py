@@ -213,8 +213,8 @@ def main():
     """Main entry point."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='PiFrame - Digital Photo Frame with Weather')
-    parser.add_argument('--config', type=str, default='config.json',
-                       help='Configuration file path (default: config.json)')
+    parser.add_argument('--config', type=str, default='config/config.json',
+                       help='Configuration file path (default: config/config.json)')
     parser.add_argument('--port', type=int, help='Port to run on (overrides config)')
     parser.add_argument('--host', type=str, help='Host to bind to (overrides config)')
     parser.add_argument('--debug', action='store_true', help='Enable debug mode')
@@ -288,7 +288,7 @@ def main():
 
 
 # Flask application factory for compatibility with 'flask run'
-def create_app(config_path='config.json', start_background_tasks=False):
+def create_app(config_path='config/config.json', start_background_tasks=False):
     """
     Create and configure Flask application instance.
     This function allows the app to be discovered by 'flask run'.

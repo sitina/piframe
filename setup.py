@@ -20,12 +20,12 @@ def main():
     
     # Load current config
     config = {}
-    if os.path.exists("config.json"):
+    if os.path.exists("config/config.json"):
         try:
-            with open("config.json", "r") as f:
+            with open("config/config.json", "r") as f:
                 config = json.load(f)
         except json.JSONDecodeError:
-            print("⚠️  Warning: Invalid config.json, creating new one")
+            print("⚠️  Warning: Invalid config/config.json, creating new one")
             config = {}
     
     print("Current configuration:")
@@ -94,7 +94,8 @@ def main():
         config['frontend_refresh_interval'] = int(frontend_interval)
     
     # Save config
-    with open("config.json", "w") as f:
+    os.makedirs("config", exist_ok=True)
+    with open("config/config.json", "w") as f:
         json.dump(config, f, indent=2)
     
     print()

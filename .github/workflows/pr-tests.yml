@@ -74,9 +74,9 @@ jobs:
         sys.path.insert(0, '.')
         
         # Ensure old modules still work
-        import drive_pictures
-        import image_metadata
-        import monitor_performance
+        import legacy.drive_pictures as drive_pictures
+        import legacy.image_metadata as image_metadata
+        import legacy.monitor_performance as monitor_performance
         
         # Test performance monitor
         monitor = monitor_performance.PerformanceMonitor()

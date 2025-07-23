@@ -171,7 +171,7 @@ jobs:
         sys.path.insert(0, '.')
         
         # Test legacy modules still work
-        import monitor_performance
+        import legacy.monitor_performance as monitor_performance
         
         monitor = monitor_performance.PerformanceMonitor()
         stats = monitor.get_system_stats()
