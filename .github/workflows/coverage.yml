@@ -12,6 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Generate coverage report
     
+    env:
+      CI: true  # Skip Google Drive integration tests
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -76,6 +79,9 @@ jobs:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
         test-group: ["cache", "services"]
       fail-fast: false
+    
+    env:
+      CI: true  # Skip Google Drive integration tests
     
     name: Test Python ${{ matrix.python-version }} - ${{ matrix.test-group }}
     

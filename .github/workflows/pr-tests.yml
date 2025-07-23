@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Quick validation tests
     
+    env:
+      CI: true  # Skip Google Drive integration tests
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4

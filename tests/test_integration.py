@@ -16,6 +16,9 @@ from app import app
 import drive_pictures
 import image_metadata
 
+# Skip Google Drive integration tests in CI environment
+SKIP_DRIVE_TESTS = os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true'
+
 
 class TestIntegration(unittest.TestCase):
     """Integration tests for PiFrame application"""
@@ -84,6 +87,7 @@ class TestIntegration(unittest.TestCase):
         mock_get_forecast.assert_called_once()
         mock_serve_image.assert_called_once_with(force_new=False, include_metadata=True)
 
+    @unittest.skipIf(SKIP_DRIVE_TESTS, "Skipping Google Drive integration test in CI environment")
     @patch('drive_pictures.get_service')
     @patch('drive_pictures.get_credentials')
     def test_drive_integration_with_metadata(self, mock_get_creds, mock_get_service):

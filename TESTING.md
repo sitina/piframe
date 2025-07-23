@@ -61,6 +61,9 @@ python run_tests.py --performance-only
 
 # Run without coverage (faster)
 python run_tests.py --no-coverage
+
+# Skip Google Drive integration tests (for CI-like testing)
+python run_tests.py --skip-drive
 ```
 
 ### Test Individual Components
@@ -236,6 +239,44 @@ def test_memory_usage(self):
     self.assertLess(memory_increase, 50 * 1024 * 1024)  # < 50MB increase
 ```
 
+## Google Drive Integration Testing
+
+### CI vs Local Testing
+
+**CI Environment (GitHub Actions)**:
+- Google Drive integration tests are automatically skipped
+- Uses `CI=true` environment variable detection
+- Tests run with mocked Google Drive API responses only
+- No real Google Drive credentials required
+
+**Local Development**:
+- Run all tests including Google Drive integration: `python run_tests.py`
+- Skip Google Drive tests locally: `python run_tests.py --skip-drive`
+- Google Drive tests require valid `client_secret.json` and `token.pickle` files
+
+### Test Categories
+
+| Test File | Description | CI Status |
+|-----------|-------------|-----------|
+| `test_drive_service.py` | New modular Drive service (well-mocked) | ✅ Runs in CI |
+| `test_drive_pictures.py` | Legacy Drive integration | ❌ Skipped in CI |
+| `test_integration.py` | Selected integration tests | ⚠️ Partially skipped |
+
+### Running Google Drive Tests Locally
+
+```bash
+# Ensure you have Google Drive credentials set up
+# 1. Place client_secret.json in project root
+# 2. Run app.py once to generate token.pickle via OAuth flow
+
+# Run all tests including Google Drive integration
+python run_tests.py
+
+# Run only Google Drive related tests
+python -m unittest tests.test_drive_pictures -v
+python -m unittest tests.test_integration.TestIntegration.test_drive_integration_with_metadata -v
+```
+
 ## Troubleshooting
 
 ### Common Issues
@@ -244,6 +285,7 @@ def test_memory_usage(self):
 2. **Mock Issues**: Ensure mocks are properly configured and match actual APIs
 3. **Timeout Issues**: Some integration tests may timeout - use `continue-on-error` for non-critical tests
 4. **Platform Differences**: File path separators and line endings may differ across platforms
+5. **Google Drive Authentication**: Local tests may fail without proper credentials setup
 
 ### Running Tests in Docker
 

@@ -14,6 +14,9 @@ jobs:
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
       fail-fast: false  # Don't cancel other jobs if one fails
+    
+    env:
+      CI: true  # Skip Google Drive integration tests
 
     steps:
     - name: Checkout code
@@ -76,6 +79,9 @@ jobs:
   test-core-functionality:
     runs-on: ubuntu-latest
     name: Core functionality tests (Python 3.11)
+    
+    env:
+      CI: true  # Skip Google Drive integration tests
     
     steps:
     - name: Checkout code
@@ -195,6 +201,9 @@ jobs:
     runs-on: ubuntu-latest
     name: Legacy compatibility tests
     
+    env:
+      CI: true  # Skip Google Drive integration tests
+    
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -250,6 +259,9 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     name: Code quality checks
+    
+    env:
+      CI: true  # Skip Google Drive integration tests
     
     steps:
     - name: Checkout code

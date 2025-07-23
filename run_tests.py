@@ -123,8 +123,17 @@ def main():
         default='test_*.py',
         help='Test file pattern (default: test_*.py)'
     )
+    parser.add_argument(
+        '--skip-drive', 
+        action='store_true', 
+        help='Skip Google Drive integration tests (same as setting CI=true)'
+    )
     
     args = parser.parse_args()
+    
+    # Set CI environment variable if --skip-drive is specified
+    if args.skip_drive:
+        os.environ['CI'] = 'true'
     
     print("PiFrame Test Runner")
     print("=" * 50)

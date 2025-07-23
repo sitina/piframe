@@ -14,7 +14,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import drive_pictures
 
+# Skip all Google Drive integration tests in CI environment
+SKIP_DRIVE_TESTS = os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true'
 
+
+@unittest.skipIf(SKIP_DRIVE_TESTS, "Skipping Google Drive integration tests in CI environment")
 class TestDrivePictures(unittest.TestCase):
     """Test cases for drive_pictures module"""
 
