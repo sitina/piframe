@@ -12,7 +12,6 @@ requires-python = ">=3.8"
 max_line_length = 88
 aggressive = 2
 recursive = true
-in-place = true
 ignore = ["E203", "W503"]
 
 [tool.flake8]
