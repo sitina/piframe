@@ -18,6 +18,25 @@
             object-fit: contain;
         }
 
+        .loading-placeholder {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 4rem;
+            color: #fff;
+            text-align: center;
+            width: 100%;
+            height: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            background-color: #000;
+        }
+
+        .loading-placeholder.hidden {
+            display: none;
+        }
+
         body {
             background-color: #000;
             color: #fff;
@@ -97,6 +116,17 @@
                 metadataFrame.style.display = 'inline-block';
                 metadataFrame.innerHTML = '<div class="metadata-item">Loading new image...</div>';
             }
+            
+            // Show loading placeholder and hide main image
+            var loadingPlaceholder = document.querySelector('.loading-placeholder');
+            var mainImage = document.querySelector('.fullScreenPhoto');
+            
+            if (loadingPlaceholder) {
+                loadingPlaceholder.classList.remove('hidden');
+            }
+            if (mainImage) {
+                mainImage.style.display = 'none';
+            }
         }
 
         function hideLoadingIndicator() {
@@ -111,6 +141,17 @@
                         <strong>Time:</strong> <span id="creation-time">Loading...</span>
                     </div>
                 `;
+            }
+            
+            // Hide loading placeholder and show main image
+            var loadingPlaceholder = document.querySelector('.loading-placeholder');
+            var mainImage = document.querySelector('.fullScreenPhoto');
+            
+            if (loadingPlaceholder) {
+                loadingPlaceholder.classList.add('hidden');
+            }
+            if (mainImage) {
+                mainImage.style.display = 'block';
             }
         }
 
@@ -146,11 +187,9 @@
         }
 
         function finalizeImageUpdate(data) {
-            // Final step: hide loading indicator and show metadata
+            // Final step: update metadata and show frame (loading indicator will be hidden when image loads)
             try {
-                hideLoadingIndicator();
-
-                // Update metadata elements after hiding loading indicator
+                // Update metadata elements (loading indicator will be hidden when image loads)
                 updateMetadataElements(data);
 
                 // Show metadata frame
@@ -230,6 +269,17 @@
                     // Update image source first
                     const img = document.querySelector('.fullScreenPhoto');
                     if (img && data.picture_url) {
+                        // Set up image load event to hide loading indicator when image loads
+                        img.onload = function() {
+                            console.log('Image loaded successfully');
+                            hideLoadingIndicator();
+                        };
+                        
+                        img.onerror = function() {
+                            console.error('Image failed to load');
+                            // Keep loading indicator visible on error
+                        };
+                        
                         img.src = data.picture_url;
                         currentImageHash = data.image_hash;
                         console.log('Updated image source:', data.picture_url);
@@ -237,7 +287,7 @@
                         throw new Error('Invalid image data or missing image element');
                     }
 
-                    // Finalize the update (hide loading, update metadata, show frame)
+                    // Finalize the update (update metadata, show frame) - loading indicator will be hidden when image loads
                     const success = finalizeImageUpdate(data);
                     resetLoadingAndHandle(success, data);
                 })
@@ -276,7 +326,16 @@
 </head>
 
 <body>
-    <img src="" class="fullScreenPhoto" alt="Random photo" />
+    <!-- Loading placeholder with emoji -->
+    <div class="loading-placeholder">
+        <div>
+            📸<br>
+            <div style="font-size: 1.5rem; margin-top: 1rem;">Loading image...</div>
+        </div>
+    </div>
+    
+    <!-- Main image (initially hidden) -->
+    <img src="" class="fullScreenPhoto" alt="Random photo" style="display: none;" />
     <div class="infoFrame">
         <h1 id="creation-date"></h1>
         <span id="creation-time"></span><br />

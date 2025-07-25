@@ -14,10 +14,28 @@ from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
 from ..utils.logging import LoggerMixin, log_performance
 from .drive_service import DriveService
-import sys
+
+# Import legacy module properly
 import os
-sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-import legacy.image_metadata as image_metadata
+import importlib.util
+
+def _import_legacy_image_metadata():
+    """Import legacy image_metadata module without sys.path manipulation."""
+    # Get the project root directory (correct path: up 3 levels to get to piframe/)
+    current_dir = os.path.dirname(__file__)  # .../piframe/services/
+    services_parent = os.path.dirname(current_dir)  # .../piframe/
+    project_root = os.path.dirname(services_parent)  # .../piframe/ (project root)
+    legacy_path = os.path.join(project_root, 'legacy', 'image_metadata.py')
+    
+    spec = importlib.util.spec_from_file_location("image_metadata", legacy_path)
+    if spec and spec.loader:
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return module
+    else:
+        raise ImportError("Could not load legacy image_metadata module")
+
+image_metadata = _import_legacy_image_metadata()
 
 
 class ImageService(LoggerMixin):
@@ -210,12 +228,39 @@ class ImageService(LoggerMixin):
             Dictionary with image metadata
         """
         try:
-            # Get a new random image with metadata
-            response = self.serve_random_image(force_new=True, include_metadata=True)
+            # Process image for metadata without creating Flask response
+            correlation_id = f"metadata_{int(time.time() * 1000000)}"
+            self.logger.debug(f"Processing image for metadata [correlation_id={correlation_id}]")
             
-            # Extract metadata from current state
-            if self._current_image_metadata and self._current_image_metadata.get('display_info'):
-                display = self._current_image_metadata['display_info']
+            # Get random image info
+            image_info = self.drive_service.get_random_image()
+            if not image_info:
+                self.logger.error("No images available for metadata extraction")
+                return self._get_default_metadata()
+            
+            # Download image data
+            image_data = self.drive_service.download_file(image_info['id'])
+            if not image_data:
+                self.logger.error(f"Failed to download image {image_info['id']} for metadata")
+                return self._get_default_metadata()
+            
+            # Generate image hash for verification
+            image_hash = self._generate_image_hash(image_data)
+            
+            # Extract metadata
+            self.logger.debug(f"Extracting image metadata [correlation_id={correlation_id}]")
+            metadata_info = self.get_image_metadata(image_info['id'], image_data)
+            
+            # Update synchronized state for later image serving
+            self._current_image_id = image_info['id']
+            self._current_image_metadata = metadata_info
+            self._current_image_timestamp = time.time()
+            self._current_image_hash = image_hash
+            self.logger.info(f"Updated synchronized state for metadata [correlation_id={correlation_id}, image_id={image_info['id']}, hash={image_hash}]")
+            
+            # Build metadata response
+            if metadata_info and metadata_info.get('display_info'):
+                display = metadata_info['display_info']
                 metadata = {
                     'creation_date': display.get('creation_date', 'Unknown'),
                     'creation_time': display.get('creation_time', 'Unknown'),
@@ -234,7 +279,7 @@ class ImageService(LoggerMixin):
                 return self._get_default_metadata()
                 
         except Exception as e:
-            self.logger.error(f"Error getting random image metadata: {e}")
+            self.logger.error(f"Error getting random image metadata: {e}", exc_info=True)
             return self._get_default_metadata()
     
     def get_synchronized_metadata(self) -> Dict[str, Any]:

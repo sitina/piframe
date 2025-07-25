@@ -229,6 +229,11 @@ python scripts/test_drive_connection.py
 ### Common Issues
 
 1. **Images not loading**:
+   - **Check virtual environment**: Ensure you're using the virtual environment with dependencies installed
+     ```bash
+     source venv/bin/activate  # Activate virtual environment
+     pip install -r requirements.txt  # Install dependencies if missing
+     ```
    - Check that `album` field is set in `config/config.json`
    - Verify the folder ID is correct
    - Ensure you have access to the Google Drive folder
@@ -248,6 +253,21 @@ python scripts/test_drive_connection.py
    - Verify `config/client_secret.json` exists and is valid
    - Check that Google Drive API is enabled in your Google Cloud project
    - Ensure OAuth consent screen is configured
+
+5. **Module import errors** (e.g., "No module named 'flask'", "No module named 'requests'"):
+   - This indicates dependencies are not installed
+   - Activate virtual environment and install requirements:
+     ```bash
+     source venv/bin/activate
+     pip install -r requirements.txt
+     python app.py  # Should work now
+     ```
+   - If no virtual environment exists, create one:
+     ```bash
+     python3 -m venv venv
+     source venv/bin/activate
+     pip install -r requirements.txt
+     ```
 
 ### Debug Mode
 

@@ -46,7 +46,7 @@ class PiFrameApp:
     
     def _setup_flask_config(self) -> None:
         """Configure Flask application settings."""
-        self.app.config['SECRET_KEY'] = 'piframe-secret-key'  # Should be from config in production
+        self.app.config['SECRET_KEY'] = self.config.secret_key
         self.app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 300  # 5 minutes cache
         self.app.config['TEMPLATES_AUTO_RELOAD'] = False
     
@@ -231,7 +231,10 @@ def main():
         config = Config.load(args.config)
         config.validate()
     except Exception as e:
-        print(f"Configuration error: {e}")
+        # Use basic logging since logger may not be set up yet
+        import logging
+        logging.basicConfig(level=logging.ERROR)
+        logging.error(f"Configuration error: {e}")
         return 1
     
     # Setup logging
@@ -314,23 +317,13 @@ def create_app(config_path='config/config.json', start_background_tasks=False):
         
         return piframe_app.app
     except Exception as e:
-        print(f"Failed to create app: {e}")
+        logger = get_logger(__name__)
+        logger.error(f"Failed to create app: {e}")
         raise
 
 
-# Create default app instance for flask run (without background tasks)
-# Background tasks will be started by flask run environment
-app = None
-
-def get_flask_app():
-    """Lazy initialization of Flask app for flask run."""
-    global app
-    if app is None:
-        app = create_app(start_background_tasks=False)
-    return app
-
-# For flask run compatibility
-app = get_flask_app()
+# For flask run compatibility - create app instance without global state
+app = create_app(start_background_tasks=False)
 
 
 if __name__ == '__main__':

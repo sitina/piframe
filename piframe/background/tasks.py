@@ -288,14 +288,16 @@ def create_standard_tasks(weather_service, drive_service, image_service, config)
             drive_service.clear_download_cache()
         
         # Preload a couple random images
-        for _ in range(2):
+        for i in range(2):
             try:
                 image_info = drive_service.get_random_image(avoid_recent=False)
                 if image_info:
                     drive_service.download_file(image_info['id'])
             except Exception as e:
-                # Don't let preload errors stop the task
-                pass
+                # Log preload errors but don't let them stop the task
+                from ..utils.logging import get_logger
+                logger = get_logger(__name__)
+                logger.warning(f"Failed to preload image {i+1}/2: {e}")
     
     task_manager.add_task(
         name="image_preload",

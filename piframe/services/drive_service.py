@@ -7,6 +7,7 @@ import io
 import os
 import pickle
 import random
+import threading
 import time
 from typing import List, Dict, Any, Optional, Union
 
@@ -49,6 +50,7 @@ class DriveService(LoggerMixin):
         self._credentials = None
         self._service = None
         self._recently_served = []
+        self._recently_served_lock = threading.Lock()
         
     @property
     def credentials(self) -> Optional[Credentials]:
@@ -335,31 +337,32 @@ class DriveService(LoggerMixin):
         if not files:
             return None
         
-        available_files = files.copy()
-        
-        # Remove recently served files if requested
-        if avoid_recent and self._recently_served:
-            available_files = [
-                f for f in available_files 
-                if f['id'] not in self._recently_served
-            ]
+        with self._recently_served_lock:
+            available_files = files.copy()
             
-            # If we've served all images recently, reset the list
-            if not available_files:
-                available_files = files.copy()
-                self._recently_served.clear()
-                self.logger.debug("Reset recently served list - all images served")
-        
-        # Select random file
-        random_file = random.choice(available_files)
-        
-        # Track recently served
-        self._recently_served.append(random_file['id'])
-        
-        # Keep only last few served files
-        max_recent = min(3, len(files) // 2)  # Don't block more than half the images
-        if len(self._recently_served) > max_recent:
-            self._recently_served = self._recently_served[-max_recent:]
+            # Remove recently served files if requested
+            if avoid_recent and self._recently_served:
+                available_files = [
+                    f for f in available_files 
+                    if f['id'] not in self._recently_served
+                ]
+                
+                # If we've served all images recently, reset the list
+                if not available_files:
+                    available_files = files.copy()
+                    self._recently_served.clear()
+                    self.logger.debug("Reset recently served list - all images served")
+            
+            # Select random file
+            random_file = random.choice(available_files)
+            
+            # Track recently served
+            self._recently_served.append(random_file['id'])
+            
+            # Keep only last few served files
+            max_recent = min(3, len(files) // 2)  # Don't block more than half the images
+            if len(self._recently_served) > max_recent:
+                self._recently_served = self._recently_served[-max_recent:]
         
         self.logger.info(f"Selected random image: {random_file['name']} ({random_file['id']})")
         return random_file
@@ -409,10 +412,12 @@ class DriveService(LoggerMixin):
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get cache statistics for Drive-related caches."""
         stats = self.cache_manager.get_all_stats()
+        with self._recently_served_lock:
+            recently_served_count = len(self._recently_served)
         return {
             'files_cache': stats.get('files', {}),
             'downloads_cache': stats.get('downloads', {}),
-            'recently_served_count': len(self._recently_served)
+            'recently_served_count': recently_served_count
         }
     
     def close(self) -> None:

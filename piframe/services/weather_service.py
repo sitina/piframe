@@ -39,12 +39,25 @@ class WeatherService(LoggerMixin):
         
     @property
     def session(self) -> requests.Session:
-        """Get or create requests session."""
+        """Get or create requests session with proper configuration."""
         if self._session is None:
             self._session = requests.Session()
             self._session.headers.update({
                 'User-Agent': 'PiFrame/0.2.0'
             })
+            # Configure session timeouts and retries
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            self._session.mount("http://", adapter)
+            self._session.mount("https://", adapter)
+            
         return self._session
     
     @log_performance
@@ -73,7 +86,7 @@ class WeatherService(LoggerMixin):
         
         try:
             url = (
-                f"http://api.openweathermap.org/data/2.5/weather"
+                f"https://api.openweathermap.org/data/2.5/weather"
                 f"?appid={self.config.weather_api_key}"
                 f"&q={self.config.weather_location}"
             )
@@ -140,7 +153,7 @@ class WeatherService(LoggerMixin):
         
         try:
             url = (
-                f"http://api.openweathermap.org/data/2.5/forecast"
+                f"https://api.openweathermap.org/data/2.5/forecast"
                 f"?appid={self.config.weather_api_key}"
                 f"&lat={self.config.weather_lat}"
                 f"&lon={self.config.weather_lon}"
@@ -315,6 +328,18 @@ class WeatherService(LoggerMixin):
     def close(self) -> None:
         """Close the service and clean up resources."""
         if self._session:
-            self._session.close()
-            self._session = None
+            try:
+                self._session.close()
+            except Exception as e:
+                self.logger.warning(f"Error closing HTTP session: {e}")
+            finally:
+                self._session = None
         self.logger.info("Weather service closed")
+        
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit - ensure resources are cleaned up."""
+        self.close()

@@ -5,6 +5,7 @@ Handles loading, validation, and access to all application settings.
 
 import json
 import os
+import secrets
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, asdict
 
@@ -53,6 +54,9 @@ class Config:
     config_file: str = "config/config.json"
     log_file: str = "logs/piframe.log"
     
+    # Security settings
+    secret_key: str = ""
+    
     @classmethod
     def load(cls, config_path: str = "config/config.json") -> 'Config':
         """
@@ -68,14 +72,20 @@ class Config:
                     data = json.load(f)
                     config._update_from_dict(data)
             except (json.JSONDecodeError, FileNotFoundError) as e:
-                print(f"Warning: Error loading config from {config_path}: {e}")
-                print("Using default configuration")
+                import logging
+                logging.warning(f"Error loading config from {config_path}: {e}")
+                logging.info("Using default configuration")
         else:
-            print(f"Config file {config_path} not found, creating with defaults")
+            import logging
+            logging.info(f"Config file {config_path} not found, creating with defaults")
             config.save()
         
         # Load from environment variables (overrides file config)
         config._load_from_env()
+        
+        # Generate secure secret key if not provided
+        if not config.secret_key:
+            config.secret_key = secrets.token_hex(32)
         
         return config
     
@@ -107,6 +117,7 @@ class Config:
             'PIFRAME_WEATHER_LON': ('weather_lon', float),
             'PIFRAME_HOST': 'default_host',
             'PIFRAME_PORT': ('default_port', int),
+            'PIFRAME_SECRET_KEY': 'secret_key',
         }
         
         for env_var, attr_info in env_mappings.items():
@@ -117,7 +128,8 @@ class Config:
                     try:
                         setattr(self, attr_name, converter(value))
                     except (ValueError, TypeError):
-                        print(f"Warning: Invalid value for {env_var}: {value}")
+                        import logging
+                        logging.warning(f"Invalid value for {env_var}: {value}")
                 else:
                     setattr(self, attr_info, value)
     
@@ -139,31 +151,69 @@ class Config:
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config_dict, f, indent=2)
-            print(f"Configuration saved to {config_path}")
+            import logging
+            logging.info(f"Configuration saved to {config_path}")
         except IOError as e:
-            print(f"Error saving configuration: {e}")
+            import logging
+            logging.error(f"Error saving configuration: {e}")
     
-    def validate(self) -> bool:
+    def validate(self, fail_fast: bool = False) -> bool:
         """
         Validate configuration and return True if valid.
-        Prints warnings for missing required settings.
+        
+        Args:
+            fail_fast: If True, raise exceptions for critical configuration errors
+        
+        Returns:
+            True if configuration is valid for basic operation
+            
+        Raises:
+            ValueError: If fail_fast=True and critical configuration is missing
         """
         is_valid = True
+        import logging
         
+        # Critical configuration checks
         if not self.album_id:
-            print("Warning: album_id not configured - image serving will not work")
+            error_msg = "album_id not configured - image serving will not work"
+            if fail_fast:
+                raise ValueError(error_msg)
+            logging.error(error_msg)
             is_valid = False
         
         if not os.path.exists(self.drive_credentials_file):
-            print(f"Warning: Drive credentials file {self.drive_credentials_file} not found")
+            error_msg = f"Drive credentials file {self.drive_credentials_file} not found"
+            if fail_fast:
+                raise ValueError(error_msg)
+            logging.error(error_msg)
+            is_valid = False
+            
+        # Validate secret key is not empty (it gets auto-generated if missing)
+        if not self.secret_key:
+            error_msg = "Secret key is empty - this should not happen after config loading"
+            if fail_fast:
+                raise ValueError(error_msg)
+            logging.error(error_msg)
             is_valid = False
         
+        # Non-critical warnings
         if not self.weather_api_key:
-            print("Warning: weather_api_key not configured - weather features disabled")
+            logging.warning("weather_api_key not configured - weather features disabled")
         
         if not self.weather_location:
-            print("Warning: weather_location not configured - using default coordinates")
-        
+            logging.warning("weather_location not configured - using default coordinates")
+            
+        # Validate ports and intervals
+        if self.default_port < 1 or self.default_port > 65535:
+            error_msg = f"Invalid port number: {self.default_port}"
+            if fail_fast:
+                raise ValueError(error_msg)
+            logging.error(error_msg)
+            is_valid = False
+            
+        if self.weather_cache_ttl < 60:  # Minimum 1 minute
+            logging.warning(f"Weather cache TTL very low: {self.weather_cache_ttl}s")
+            
         return is_valid
     
     def to_dict(self) -> Dict[str, Any]:
