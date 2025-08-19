@@ -197,7 +197,7 @@ class CacheManager:
             ('chart', config.chart_cache_ttl, 5),
             ('files', config.files_cache_ttl, 50),
             ('downloads', config.download_cache_ttl, config.download_cache_size),
-            ('metadata', 3600, config.metadata_cache_size),  # 1 hour for metadata
+            ('metadata', config.metadata_cache_ttl, config.metadata_cache_size),
         ]
         
         for name, ttl, size in cache_configs:

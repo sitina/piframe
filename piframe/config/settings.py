@@ -32,6 +32,7 @@ class Config:
     chart_cache_ttl: int = 3600       # 1 hour
     files_cache_ttl: int = 3600       # 1 hour
     download_cache_ttl: int = 60      # 1 minute
+    metadata_cache_ttl: int = 3600    # 1 hour
     
     # Background task intervals (in seconds)
     background_refresh_interval: int = 300    # 5 minutes
@@ -41,6 +42,7 @@ class Config:
     
     # Frontend settings
     frontend_refresh_interval: int = 30       # 30 seconds
+    flask_file_cache_max_age: int = 300       # 5 minutes
     
     # Cache sizes
     download_cache_size: int = 5

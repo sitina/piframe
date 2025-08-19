@@ -47,7 +47,7 @@ class PiFrameApp:
     def _setup_flask_config(self) -> None:
         """Configure Flask application settings."""
         self.app.config['SECRET_KEY'] = self.config.secret_key
-        self.app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 300  # 5 minutes cache
+        self.app.config['SEND_FILE_MAX_AGE_DEFAULT'] = self.config.flask_file_cache_max_age
         self.app.config['TEMPLATES_AUTO_RELOAD'] = False
     
     def _register_routes(self) -> None:
