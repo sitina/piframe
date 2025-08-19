@@ -19,17 +19,16 @@
         }
 
         .loading-placeholder {
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: block;
             font-size: 4rem;
             color: #fff;
             text-align: center;
             width: 100%;
             height: 100%;
             position: fixed;
-            top: 0;
+            top: 50%;
             left: 0;
+            margin-top: -2rem;
             background-color: #000;
         }
 
@@ -102,13 +101,13 @@
     </style>
     <meta name="apple-mobile-web-app-capable" content="yes">
     <script>
-        let retryCount = 0;
-        const MAX_RETRIES = 3;
-        const RETRY_DELAY = 2000; // 2 seconds
-        const LOADING_TIMEOUT = 15000; // 15 seconds timeout
-        let currentImageHash = null;
-        let isLoading = false;
-        let loadingTimeout = null;
+        var retryCount = 0;
+        var MAX_RETRIES = 3;
+        var RETRY_DELAY = 2000;
+        var LOADING_TIMEOUT = 15000;
+        var currentImageHash = null;
+        var isLoading = false;
+        var loadingTimeout = null;
 
         function showLoadingIndicator() {
             var metadataFrame = document.querySelector('.metadataFrame');
@@ -117,12 +116,11 @@
                 metadataFrame.innerHTML = '<div class="metadata-item">Loading new image...</div>';
             }
             
-            // Show loading placeholder and hide main image
             var loadingPlaceholder = document.querySelector('.loading-placeholder');
             var mainImage = document.querySelector('.fullScreenPhoto');
             
             if (loadingPlaceholder) {
-                loadingPlaceholder.classList.remove('hidden');
+                loadingPlaceholder.className = loadingPlaceholder.className.replace('hidden', '');
             }
             if (mainImage) {
                 mainImage.style.display = 'none';
@@ -132,195 +130,141 @@
         function hideLoadingIndicator() {
             var metadataFrame = document.querySelector('.metadataFrame');
             if (metadataFrame) {
-                // Restore original content
-                metadataFrame.innerHTML = `
-                    <div class="metadata-item">
-                        <strong>Date:</strong> <span id="creation-date">Loading...</span>
-                    </div>
-                    <div class="metadata-item">
-                        <strong>Time:</strong> <span id="creation-time">Loading...</span>
-                    </div>
-                `;
+                metadataFrame.innerHTML = '<div class="metadata-item"><strong>Date:</strong> <span id="creation-date">Loading...</span></div><div class="metadata-item"><strong>Time:</strong> <span id="creation-time">Loading...</span></div>';
             }
             
-            // Hide loading placeholder and show main image
             var loadingPlaceholder = document.querySelector('.loading-placeholder');
             var mainImage = document.querySelector('.fullScreenPhoto');
             
             if (loadingPlaceholder) {
-                loadingPlaceholder.classList.add('hidden');
+                if (loadingPlaceholder.className.indexOf('hidden') === -1) {
+                    loadingPlaceholder.className += ' hidden';
+                }
             }
             if (mainImage) {
                 mainImage.style.display = 'block';
             }
         }
 
-        function verifyImageMetadataSync(data, imageResponse) {
-            // Verify that image hash matches metadata hash (non-blocking)
-            if (data.image_hash && imageResponse) {
-                const imageHash = imageResponse.headers.get('X-Image-Hash');
-                if (imageHash && imageHash !== data.image_hash) {
-                    console.warn('Image hash mismatch detected (continuing anyway):', {
-                        metadata_hash: data.image_hash,
-                        image_hash: imageHash
-                    });
-                    // Return true anyway - don't block on hash mismatch
-                }
-            }
-            return true; // Always return true to avoid blocking
-        }
-
         function updateMetadataElements(data) {
-            // Safely update metadata elements with null checks
             try {
-                const creationDateEl = document.getElementById('creation-date');
-                const creationTimeEl = document.getElementById('creation-time');
+                var creationDateEl = document.getElementById('creation-date');
+                var creationTimeEl = document.getElementById('creation-time');
                 if (creationDateEl) creationDateEl.innerText = data.creation_date || 'Unknown';
                 if (creationTimeEl) creationTimeEl.innerText = data.creation_time || 'Unknown';
-
-                console.log('Successfully updated metadata elements');
                 return true;
             } catch (error) {
-                console.error('Error updating metadata elements:', error);
                 return false;
             }
         }
 
         function finalizeImageUpdate(data) {
-            // Final step: update metadata and show frame (loading indicator will be hidden when image loads)
             try {
-                // Update metadata elements (loading indicator will be hidden when image loads)
                 updateMetadataElements(data);
-
-                // Show metadata frame
-                const metadataFrame = document.querySelector('.metadataFrame');
+                var metadataFrame = document.querySelector('.metadataFrame');
                 if (metadataFrame) {
                     metadataFrame.style.display = 'inline-block';
                 }
-
-                console.log('Successfully finalized image update');
                 return true;
             } catch (error) {
-                console.error('Error finalizing image update:', error);
                 return false;
             }
         }
 
-        function updateImageAndMetadata(attempt = 0) {
+        function resetLoadingAndHandle(success, data) {
+            try {
+                if (loadingTimeout) {
+                    clearTimeout(loadingTimeout);
+                    loadingTimeout = null;
+                }
+                isLoading = false;
+                if (success) {
+                    retryCount = 0;
+                } else {
+                    handleUpdateFailure();
+                }
+            } catch (error) {
+                isLoading = false;
+                handleUpdateFailure();
+            }
+        }
+
+        function updateImageAndMetadata(attempt) {
+            if (typeof attempt === 'undefined') attempt = 0;
+            
             if (isLoading && attempt === 0) {
-                console.log('Update already in progress, skipping');
                 return;
             }
 
-            // Set loading state and show indicator
             isLoading = true;
             if (attempt === 0) {
                 showLoadingIndicator();
-
-                // Set timeout to prevent getting stuck
-                loadingTimeout = setTimeout(() => {
-                    console.error('Loading timeout reached, forcing reset');
+                loadingTimeout = setTimeout(function() {
                     resetLoadingAndHandle(false);
                 }, LOADING_TIMEOUT);
             }
 
-            console.log(`Updating image and metadata (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', '/random-picture/metadata?t=' + new Date().getTime(), true);
+            xhr.setRequestHeader('Cache-Control', 'no-cache');
+            
+            xhr.onreadystatechange = function() {
+                if (xhr.readyState === 4) {
+                    if (xhr.status === 200) {
+                        try {
+                            var data = JSON.parse(xhr.responseText);
+                            
+                            var img = document.querySelector('.fullScreenPhoto');
+                            if (img && data.picture_url) {
+                                img.onload = function() {
+                                    hideLoadingIndicator();
+                                };
+                                
+                                img.onerror = function() {
+                                    // Keep loading indicator visible on error
+                                };
+                                
+                                img.src = data.picture_url;
+                                currentImageHash = data.image_hash;
+                            }
 
-            // Wrapper to ensure isLoading is always reset
-            const resetLoadingAndHandle = (success, data = null) => {
-                try {
-                    // Clear loading timeout
-                    if (loadingTimeout) {
-                        clearTimeout(loadingTimeout);
-                        loadingTimeout = null;
-                    }
-
-                    isLoading = false;
-
-                    if (success) {
-                        retryCount = 0;
-                        console.log('Successfully updated image and metadata');
+                            var success = finalizeImageUpdate(data);
+                            resetLoadingAndHandle(success, data);
+                        } catch (error) {
+                            resetLoadingAndHandle(false);
+                        }
                     } else {
-                        handleUpdateFailure(attempt);
+                        resetLoadingAndHandle(false);
                     }
-                } catch (error) {
-                    console.error('Error in resetLoadingAndHandle:', error);
-                    isLoading = false;
-                    handleUpdateFailure(attempt);
                 }
             };
-
-            // Main update logic with comprehensive error handling
-            fetch('/random-picture/metadata', {
-                cache: 'no-cache',
-                headers: {
-                    'Cache-Control': 'no-cache'
-                }
-            })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Metadata fetch failed: ${response.status}`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    console.log('Metadata received:', data);
-
-                    // Update image source first
-                    const img = document.querySelector('.fullScreenPhoto');
-                    if (img && data.picture_url) {
-                        // Set up image load event to hide loading indicator when image loads
-                        img.onload = function() {
-                            console.log('Image loaded successfully');
-                            hideLoadingIndicator();
-                        };
-                        
-                        img.onerror = function() {
-                            console.error('Image failed to load');
-                            // Keep loading indicator visible on error
-                        };
-                        
-                        img.src = data.picture_url;
-                        currentImageHash = data.image_hash;
-                        console.log('Updated image source:', data.picture_url);
-                    } else {
-                        throw new Error('Invalid image data or missing image element');
-                    }
-
-                    // Finalize the update (update metadata, show frame) - loading indicator will be hidden when image loads
-                    const success = finalizeImageUpdate(data);
-                    resetLoadingAndHandle(success, data);
-                })
-                .catch(error => {
-                    console.error('Error in updateImageAndMetadata:', error);
-                    resetLoadingAndHandle(false);
-                });
+            
+            xhr.send();
         }
 
-        function handleUpdateFailure(attempt) {
-            if (attempt < MAX_RETRIES) {
-                console.log(`Retrying in ${RETRY_DELAY}ms... (${attempt + 1}/${MAX_RETRIES})`);
-                setTimeout(() => {
-                    updateImageAndMetadata(attempt + 1);
+        function handleUpdateFailure() {
+            if (retryCount < MAX_RETRIES) {
+                retryCount++;
+                setTimeout(function() {
+                    updateImageAndMetadata(retryCount);
                 }, RETRY_DELAY);
             } else {
-                console.error('Max retries reached, giving up');
-                // Hide loading indicator and metadata frame on final failure
                 try {
-                    const metadataFrame = document.querySelector('.metadataFrame');
+                    var metadataFrame = document.querySelector('.metadataFrame');
                     if (metadataFrame) {
                         metadataFrame.style.display = 'none';
                     }
                 } catch (error) {
-                    console.error('Error hiding metadata frame:', error);
+                    // Ignore error
                 }
             }
         }
 
-        window.onload = function () {
+        window.onload = function() {
             updateImageAndMetadata();
-            // Refresh every 30 seconds
-            setInterval(updateImageAndMetadata, 30000);
+            setInterval(function() {
+                updateImageAndMetadata();
+            }, 30000);
         };
     </script>
 </head>

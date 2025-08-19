@@ -61,12 +61,12 @@
             openFullscreen();
         });
 
-        window.setInterval("reloadIFrame();", {{ refresh_interval * 1000 }});
-
         function reloadIFrame() {
             var timestamp = new Date().getTime();
             document.getElementById("picFrame").src = "../picture?t=" + timestamp;
         }
+
+        window.setInterval(reloadIFrame, {{ refresh_interval * 1000 }});
     </script>
 </head>
 
