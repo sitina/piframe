@@ -89,6 +89,10 @@ python scripts/test_drive_connection.py
 
 # Run specific test file
 python scripts/run_tests.py --test-file tests/test_app.py
+
+# Other test utilities
+python scripts/test_metadata.py    # Test image metadata
+python scripts/test_sync.py        # Test synchronized endpoints
 ```
 
 ### Code Quality
@@ -98,27 +102,35 @@ autopep8 --recursive --in-place .
 
 # Sort imports
 isort .
+
+# Performance monitoring
+python legacy/monitor_performance.py
 ```
 
 ## Core Architecture (Refactored - Clean Modular Design)
 
 ### Modular Structure
 
-The application now follows a clean, modular architecture with proper separation of concerns:
+The application follows a clean, modular architecture with proper separation of concerns:
 
 ```
 piframe/
 ├── config/
+│   ├── __init__.py
 │   └── settings.py          # Centralized configuration management
 ├── services/
+│   ├── __init__.py
 │   ├── weather_service.py   # Weather API + caching + chart generation  
 │   ├── drive_service.py     # Google Drive authentication + file operations
 │   └── image_service.py     # Image serving + metadata + Flask responses
 ├── models/
+│   ├── __init__.py
 │   └── cache.py            # Centralized TTL cache management
 ├── background/
+│   ├── __init__.py
 │   └── tasks.py            # Background task coordination
 └── utils/
+    ├── __init__.py
     └── logging.py          # Centralized logging framework
 ```
 
@@ -163,24 +175,32 @@ piframe/
 
 ### Configuration Structure
 
-**New Configuration System**: Centralized in `piframe/config/settings.py`
+**Configuration System**: Centralized in `piframe/config/settings.py`
 
-Required settings:
-- `album_id` - Google Drive folder ID (legacy: `album`)
-- `weather_api_key` - OpenWeatherMap API key (optional)
-- `weather_location` - Location string for weather (optional)
+**Required settings:**
+- `album_id` - Google Drive folder ID (legacy: `album` also supported)
+- `drive_credentials_file` - Path to Google API credentials (default: config/client_secret.json)
+- `drive_token_file` - Path to OAuth token (default: config/token.pickle)
+
+**Optional settings:**
+- `weather_api_key` - OpenWeatherMap API key
+- `weather_location` - Location string for weather
+- `weather_lat`, `weather_lon` - Coordinates (defaults to Prague)
 
 **Environment Variable Support** (overrides config/config.json):
 - `PIFRAME_ALBUM_ID` - Google Drive folder ID
 - `PIFRAME_WEATHER_API_KEY` - Weather API key  
 - `PIFRAME_WEATHER_LOCATION` - Weather location
+- `PIFRAME_WEATHER_LAT`, `PIFRAME_WEATHER_LON` - Coordinates
 - `PIFRAME_HOST`, `PIFRAME_PORT` - Server settings
+- `PIFRAME_SECRET_KEY` - Flask secret key
 
 **Performance Settings** (all configurable):
-- Cache TTLs: weather (10min), forecast (30min), charts (1hr)
+- Cache TTLs: weather (10min), forecast (30min), charts (1hr), files (1hr)
 - Background intervals: weather refresh (5min), image preload (15min)
 - Error retry intervals with exponential backoff
-- Cache sizes and cleanup intervals
+- Cache sizes: downloads (5), metadata (20)
+- Frontend refresh interval (30s)
 
 ### API Endpoints
 
@@ -192,6 +212,7 @@ Required settings:
 - `/random-picture/new` - Force new image (bypass cache)
 - `/random-picture/metadata` - Get image metadata as JSON
 - `/random-picture/synchronized` - Synchronized image for metadata consistency
+- `/random-picture/synchronized-metadata` - Get synchronized image and metadata
 - `/weather/forecast.png` - Generated forecast chart
 
 ### Error Handling & Resilience
@@ -225,21 +246,23 @@ Required settings:
 ## Migration from Original Code
 
 **Backward Compatibility**:
-- Existing `config/config.json` files continue to work
+- Existing `config/config.json` files continue to work (with legacy key mapping)
 - All original API endpoints preserved
-- Same deployment scripts and service files
-- Original `drive_pictures.py` and `image_metadata.py` preserved as fallbacks
+- Same deployment scripts and service files remain functional
+- Original code preserved in `legacy/` directory as fallbacks
 
 **What Changed**:
-- Modular architecture with clean separation of concerns
-- Centralized configuration and logging
-- Thread-safe caching with proper resource management
-- Service layer with dependency injection
-- Improved error handling and monitoring
+- **Architecture**: Modular service-based architecture with dependency injection
+- **Configuration**: Centralized config management with environment variable support
+- **Caching**: Thread-safe TTL cache with automatic cleanup and size limits
+- **Background Tasks**: Coordinated task management with proper error handling
+- **Logging**: Structured logging with performance monitoring
+- **Error Handling**: Comprehensive error handling with graceful degradation
 
 **What Stayed the Same**:
-- All API endpoints and functionality
-- Template structure and static files
+- All API endpoints and functionality preserved
+- Template structure and static files unchanged
 - Google Drive integration and authentication flow
 - Weather API integration and chart generation
-- Image metadata extraction and serving
+- Image metadata extraction and serving logic
+- Flask application interface (can still use `flask run`)
