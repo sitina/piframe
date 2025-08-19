@@ -69,8 +69,10 @@ class ImageService(LoggerMixin):
         """Generate SHA-256 hash of image data for verification."""
         image_data.seek(0)
         hash_obj = hashlib.sha256()
-        while chunk := image_data.read(4096):
+        chunk = image_data.read(4096)
+        while chunk:
             hash_obj.update(chunk)
+            chunk = image_data.read(4096)
         image_data.seek(0)  # Reset for later use
         return hash_obj.hexdigest()[:16]  # Use first 16 characters
     
