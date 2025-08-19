@@ -13,7 +13,7 @@ A Flask-based digital photo frame application that displays random photos from G
 
 ## Current Status
 
-⚠️ **Important**: The application currently has a simplified configuration. You need to set up your Google Drive album ID manually.
+✅ **Fully Functional**: The application has been completely refactored with a clean modular architecture. All features are working with proper configuration management and error handling.
 
 ## Quick Start
 
@@ -35,11 +35,18 @@ cd piframe
    - Edit `config/config.json` and add your Google Drive folder ID:
 ```json
 {
-  "album": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
+  "album_id": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
   "weather_api_key": "your_openweathermap_api_key",
   "weather_location": "Your City, Country"
 }
 ```
+
+   **Option C: Environment variables** (production recommended):
+   ```bash
+   export PIFRAME_ALBUM_ID="YOUR_GOOGLE_DRIVE_FOLDER_ID"
+   export PIFRAME_WEATHER_API_KEY="your_openweathermap_api_key"
+   export PIFRAME_WEATHER_LOCATION="Your City, Country"
+   ```
 
 3. **Get your Google Drive folder ID** (if doing manual setup):
    - Open Google Drive in your browser
@@ -124,12 +131,15 @@ Create or edit `config/config.json`:
 
 ```json
 {
-  "album": "your_google_drive_folder_id",
+  "album_id": "your_google_drive_folder_id",
   "weather_api_key": "your_openweathermap_api_key",
   "weather_location": "City, Country",
   "background_refresh_interval": 300,
   "error_retry_interval": 60,
-  "frontend_refresh_interval": 30
+  "frontend_refresh_interval": 30,
+  "weather_cache_ttl": 600,
+  "forecast_cache_ttl": 1800,
+  "chart_cache_ttl": 3600
 }
 ```
 
@@ -137,15 +147,48 @@ Create or edit `config/config.json`:
 
 #### Required Settings
 
-- **`album`**: Your Google Drive folder ID containing the photos
+- **`album_id`**: Your Google Drive folder ID containing the photos (legacy: `album`)
 - **`weather_api_key`**: Your OpenWeatherMap API key (optional, for weather features)
 - **`weather_location`**: Your location for weather data (optional, e.g., "Prague, CZ")
 
 #### Optional Settings
 
+**Background Task Settings:**
 - **`background_refresh_interval`** (default: 300 seconds = 5 minutes): How often weather data is refreshed in the background
 - **`error_retry_interval`** (default: 60 seconds = 1 minute): How long to wait before retrying on background refresh errors  
+- **`preload_interval`** (default: 900 seconds = 15 minutes): How often images are preloaded
+- **`preload_error_retry_interval`** (default: 300 seconds = 5 minutes): Retry interval for image preload errors
+
+**Cache Settings (TTL in seconds):**
+- **`weather_cache_ttl`** (default: 600 = 10 minutes): Weather data cache duration
+- **`forecast_cache_ttl`** (default: 1800 = 30 minutes): Forecast data cache duration
+- **`chart_cache_ttl`** (default: 3600 = 1 hour): Chart image cache duration
+- **`files_cache_ttl`** (default: 3600 = 1 hour): Drive file listing cache duration
+- **`download_cache_ttl`** (default: 60 = 1 minute): Image download cache duration
+
+**Frontend Settings:**
 - **`frontend_refresh_interval`** (default: 30 seconds): How often the fullscreen view automatically refreshes to show new images
+
+**Cache Size Settings:**
+- **`download_cache_size`** (default: 5): Number of images to keep in download cache
+- **`metadata_cache_size`** (default: 20): Number of metadata entries to cache
+
+**Server Settings:**
+- **`default_host`** (default: "0.0.0.0"): Host to bind server to
+- **`default_port`** (default: 5001): Port to run server on
+
+### Environment Variables
+
+All configuration options can be overridden using environment variables (recommended for production):
+
+- `PIFRAME_ALBUM_ID` - Google Drive folder ID
+- `PIFRAME_WEATHER_API_KEY` - Weather API key
+- `PIFRAME_WEATHER_LOCATION` - Weather location
+- `PIFRAME_WEATHER_LAT` - Weather latitude (float)
+- `PIFRAME_WEATHER_LON` - Weather longitude (float)
+- `PIFRAME_HOST` - Server host
+- `PIFRAME_PORT` - Server port (integer)
+- `PIFRAME_SECRET_KEY` - Flask secret key
 
 ### Finding Your Google Drive Folder ID
 
@@ -198,6 +241,8 @@ sudo systemctl start piframe-optimized
 - `/random-picture` - Serve random image
 - `/random-picture/new` - Force new random image
 - `/random-picture/metadata` - Get image metadata as JSON
+- `/random-picture/synchronized` - Get synchronized random image (for metadata consistency)
+- `/random-picture/synchronized-metadata` - Get synchronized image metadata
 - `/weather/forecast.png` - Weather forecast chart
 
 ## Testing
@@ -283,20 +328,38 @@ Check the application logs:
 tail -f logs/piframe.log
 ```
 
-## Performance Optimizations
+## Architecture
 
-- **Enhanced Caching**: Weather data cached for 10 minutes
-- **Background Tasks**: Automatic weather data refresh
-- **Memory Management**: Automatic cleanup and limits
+PiFrame uses a clean, modular architecture with proper separation of concerns:
+
+### Core Components
+
+- **Service Layer Pattern**: Business logic separated into focused services
+  - `WeatherService` - Weather API calls, data processing, chart generation
+  - `DriveService` - Google Drive authentication, file operations, caching
+  - `ImageService` - Image serving, metadata extraction, Flask responses
+
+- **Centralized Configuration**: Single source of truth with environment variable support
+- **Advanced Caching**: Thread-safe TTL cache with automatic cleanup
+- **Background Task Management**: Coordinated background operations with error handling
+- **Dependency Injection**: Clean service initialization and resource management
+
+### Performance Optimizations
+
+- **Enhanced Caching**: Multi-layer caching with configurable TTLs
+- **Background Tasks**: Automatic data refresh and image preloading
+- **Memory Management**: Automatic cleanup and size limits
 - **Network Optimization**: Connection pooling and timeouts
-- **Matplotlib Optimization**: Non-interactive backend
+- **Error Resilience**: Comprehensive error handling with fallback to cached data
 
 ## Monitoring
 
 Monitor performance with:
 ```bash
-python monitor_performance.py
+python legacy/monitor_performance.py
 ```
+
+Performance logs are saved to `logs/performance/` directory.
 
 ## Contributing
 
@@ -309,32 +372,52 @@ python monitor_performance.py
 
 ## Directory Structure
 
-The project is organized with the following clean structure:
+The project follows a clean, modular architecture:
 
 ```
 piframe/
-├── app.py                          # Main application
-├── setup.py                        # Interactive configuration
+├── app.py                          # Main Flask application
+├── setup.py                        # Interactive configuration setup
 ├── requirements.txt                # Python dependencies
-├── config/                         # All configuration files
+├── pyproject.toml                  # Build configuration
+├── CLAUDE.md                       # Development guidance
+├── config/                         # Configuration files
 │   ├── config.json                 # Main app configuration
-│   ├── client_secret.json          # Google API credentials
-│   ├── token.pickle                # OAuth token
+│   ├── client_secret.json          # Google API credentials (gitignored)
+│   ├── token.pickle                # OAuth token (gitignored)
 │   └── systemd/                    # Systemd service files
-├── scripts/                        # All executable scripts
-│   ├── run_tests.py               # Test runner
+├── piframe/                        # Main Python package
+│   ├── config/
+│   │   └── settings.py             # Centralized configuration management
+│   ├── services/
+│   │   ├── weather_service.py      # Weather API + caching + charts
+│   │   ├── drive_service.py        # Google Drive operations
+│   │   └── image_service.py        # Image serving + metadata
+│   ├── models/
+│   │   └── cache.py                # Centralized TTL cache management
+│   ├── background/
+│   │   └── tasks.py                # Background task coordination
+│   └── utils/
+│       └── logging.py              # Centralized logging framework
+├── scripts/                        # Utility scripts
+│   ├── run_tests.py               # Test runner with coverage
 │   ├── start-install.sh           # Quick setup script
-│   ├── start.sh                   # Start script
+│   ├── test_drive_connection.py   # Drive connection tester
 │   └── test_*.py                  # Individual test scripts
-├── logs/                           # All log files
+├── tests/                          # Comprehensive test suite
+│   ├── test_*.py                  # Unit and integration tests
+│   └── __init__.py
+├── legacy/                         # Original implementation (preserved)
+│   ├── app_original.py            # Original monolithic app
+│   ├── drive_pictures.py          # Legacy drive integration
+│   └── image_metadata.py          # Legacy metadata extraction
+├── logs/                           # Log files (gitignored)
 │   ├── piframe.log                # Main application logs
-│   └── performance/               # Performance logs
-├── docs/                          # Documentation
-├── legacy/                        # Legacy/backup files
-├── piframe/                       # Main Python package
-├── tests/                         # Test suite
-├── templates/                     # Flask templates
-└── static/                        # Static assets
+│   └── performance/               # Performance monitoring logs
+├── docs/                           # Project documentation
+├── templates/                      # Flask templates
+├── static/                         # Static web assets
+└── htmlcov/                        # Test coverage reports (gitignored)
 ```
 
 ## License
