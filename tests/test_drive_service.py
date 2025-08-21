@@ -176,7 +176,7 @@ class TestDriveService(unittest.TestCase):
 
     @patch('piframe.services.drive_service.build')
     def test_list_images_in_folder_api_call(self, mock_build):
-        """Test listing images with API call."""
+        """Test listing images with API call (single page)."""
         self.mock_cache_manager.get.return_value = None
         
         # Mock service
@@ -196,6 +196,7 @@ class TestDriveService(unittest.TestCase):
                     'webViewLink': 'https://drive.google.com/file/d/2/view'
                 }
             ]
+            # No 'nextPageToken' = single page
         }
         mock_service.files().list().execute.return_value = mock_files_data
         mock_build.return_value = mock_service
@@ -211,6 +212,186 @@ class TestDriveService(unittest.TestCase):
         self.assertEqual(result[0]['name'], 'test1.jpg')
         self.assertEqual(result[1]['name'], 'test2.png')
         self.mock_cache_manager.set.assert_called_once()
+
+    @patch('piframe.services.drive_service.build')
+    def test_list_images_in_folder_pagination_multiple_pages(self, mock_build):
+        """Test listing images with pagination (multiple pages)."""
+        self.mock_cache_manager.get.return_value = None
+        
+        # Mock service with pagination
+        mock_service = MagicMock()
+        
+        # First page response
+        page1_data = {
+            'files': [
+                {'id': '1', 'name': 'page1_img1.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://drive.google.com/file/d/1/view'},
+                {'id': '2', 'name': 'page1_img2.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://drive.google.com/file/d/2/view'}
+            ],
+            'nextPageToken': 'token_page2'
+        }
+        
+        # Second page response
+        page2_data = {
+            'files': [
+                {'id': '3', 'name': 'page2_img1.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://drive.google.com/file/d/3/view'},
+                {'id': '4', 'name': 'page2_img2.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://drive.google.com/file/d/4/view'}
+            ],
+            'nextPageToken': 'token_page3'
+        }
+        
+        # Third page response (final)
+        page3_data = {
+            'files': [
+                {'id': '5', 'name': 'page3_img1.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://drive.google.com/file/d/5/view'}
+            ]
+            # No 'nextPageToken' = final page
+        }
+        
+        # Mock API calls in sequence
+        mock_list_call = mock_service.files().list
+        mock_list_call().execute.side_effect = [page1_data, page2_data, page3_data]
+        mock_build.return_value = mock_service
+        
+        # Mock credentials
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        self.drive_service._credentials = mock_creds
+        
+        result = self.drive_service.list_images_in_folder()
+        
+        # Should have all files from all pages
+        self.assertEqual(len(result), 5)
+        self.assertEqual(result[0]['name'], 'page1_img1.jpg')
+        self.assertEqual(result[2]['name'], 'page2_img1.jpg')
+        self.assertEqual(result[4]['name'], 'page3_img1.jpg')
+        
+        # Should have made 3 API calls
+        self.assertEqual(mock_list_call().execute.call_count, 3)
+
+    @patch('piframe.services.drive_service.build')
+    def test_list_images_in_folder_pagination_large_folder(self, mock_build):
+        """Test listing images with pagination for a large folder (1000+ files)."""
+        self.mock_cache_manager.get.return_value = None
+        
+        # Mock service
+        mock_service = MagicMock()
+        
+        # Generate mock data for 1500 files across 2 pages (1000 + 500)
+        def generate_page_data(page_num, files_count, has_next=False):
+            files = []
+            start_id = (page_num - 1) * 1000 + 1
+            for i in range(files_count):
+                file_id = start_id + i
+                files.append({
+                    'id': str(file_id),
+                    'name': f'image_{file_id:04d}.jpg',
+                    'mimeType': 'image/jpeg',
+                    'webViewLink': f'https://drive.google.com/file/d/{file_id}/view'
+                })
+            
+            response = {'files': files}
+            if has_next:
+                response['nextPageToken'] = f'token_page{page_num + 1}'
+            return response
+        
+        page1_data = generate_page_data(1, 1000, has_next=True)  # 1000 files, has next page
+        page2_data = generate_page_data(2, 500, has_next=False)  # 500 files, final page
+        
+        mock_list_call = mock_service.files().list
+        mock_list_call().execute.side_effect = [page1_data, page2_data]
+        mock_build.return_value = mock_service
+        
+        # Mock credentials
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        self.drive_service._credentials = mock_creds
+        
+        result = self.drive_service.list_images_in_folder()
+        
+        # Should have all 1500 files
+        self.assertEqual(len(result), 1500)
+        self.assertEqual(result[0]['name'], 'image_0001.jpg')
+        self.assertEqual(result[999]['name'], 'image_1000.jpg')
+        self.assertEqual(result[1000]['name'], 'image_1001.jpg')
+        self.assertEqual(result[1499]['name'], 'image_1500.jpg')
+        
+        # Should have made 2 API calls
+        self.assertEqual(mock_list_call().execute.call_count, 2)
+
+    @patch('piframe.services.drive_service.build')
+    def test_list_images_in_folder_pagination_safety_limit(self, mock_build):
+        """Test pagination safety limit to prevent infinite loops."""
+        self.mock_cache_manager.get.return_value = None
+        
+        # Mock service that always returns nextPageToken (infinite pagination)
+        mock_service = MagicMock()
+        
+        def infinite_pagination(*args, **kwargs):
+            return {
+                'files': [{'id': '1', 'name': 'test.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://example.com'}],
+                'nextPageToken': 'always_has_next'  # Always returns a next page token
+            }
+        
+        mock_list_call = mock_service.files().list
+        mock_list_call().execute.side_effect = infinite_pagination
+        mock_build.return_value = mock_service
+        
+        # Mock credentials
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        self.drive_service._credentials = mock_creds
+        
+        result = self.drive_service.list_images_in_folder()
+        
+        # Should stop at safety limit (100 pages, but counts to 101 before breaking)
+        self.assertEqual(len(result), 101)  # 101 pages * 1 file per page
+        self.assertEqual(mock_list_call().execute.call_count, 101)
+
+    @patch('piframe.services.drive_service.build')
+    def test_list_images_in_folder_pagination_empty_pages(self, mock_build):
+        """Test pagination with some empty pages."""
+        self.mock_cache_manager.get.return_value = None
+        
+        # Mock service
+        mock_service = MagicMock()
+        
+        page1_data = {
+            'files': [
+                {'id': '1', 'name': 'img1.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://drive.google.com/file/d/1/view'}
+            ],
+            'nextPageToken': 'token_page2'
+        }
+        
+        page2_data = {
+            'files': [],  # Empty page
+            'nextPageToken': 'token_page3'
+        }
+        
+        page3_data = {
+            'files': [
+                {'id': '2', 'name': 'img2.jpg', 'mimeType': 'image/jpeg', 'webViewLink': 'https://drive.google.com/file/d/2/view'}
+            ]
+            # Final page
+        }
+        
+        mock_list_call = mock_service.files().list
+        mock_list_call().execute.side_effect = [page1_data, page2_data, page3_data]
+        mock_build.return_value = mock_service
+        
+        # Mock credentials
+        mock_creds = MagicMock()
+        mock_creds.valid = True
+        self.drive_service._credentials = mock_creds
+        
+        result = self.drive_service.list_images_in_folder()
+        
+        # Should have 2 files (empty page should not affect result)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]['name'], 'img1.jpg')
+        self.assertEqual(result[1]['name'], 'img2.jpg')
+        
+        # Should have made 3 API calls
+        self.assertEqual(mock_list_call().execute.call_count, 3)
 
     @patch('piframe.services.drive_service.build')
     def test_list_images_in_folder_api_error(self, mock_build):

@@ -168,14 +168,43 @@ class DriveService(LoggerMixin):
             
             query = ' and '.join(query_parts)
             
-            # Execute API call
-            results = self.service.files().list(
-                q=query,
-                pageSize=100,
-                fields="nextPageToken, files(id, name, mimeType, webViewLink)"
-            ).execute()
+            # Execute API calls with full pagination support
+            all_items = []
+            page_token = None
+            page_count = 0
             
-            items = results.get('files', [])
+            while True:
+                page_count += 1
+                self.logger.debug(f"Fetching page {page_count} from Drive API")
+                
+                # Execute API call for current page
+                request_params = {
+                    'q': query,
+                    'pageSize': 1000,  # Increased from 100 to 1000 for efficiency
+                    'fields': "nextPageToken, files(id, name, mimeType, webViewLink)"
+                }
+                if page_token:
+                    request_params['pageToken'] = page_token
+                
+                results = self.service.files().list(**request_params).execute()
+                
+                # Add items from current page
+                page_items = results.get('files', [])
+                all_items.extend(page_items)
+                
+                self.logger.debug(f"Page {page_count}: found {len(page_items)} items (total: {len(all_items)})")
+                
+                # Check if there are more pages
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
+                    
+                # Safety check to prevent infinite loops
+                if page_count > 100:  # Max 100,000 files (100 pages * 1000)
+                    self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
+                    break
+            
+            items = all_items
             
             if not items:
                 self.logger.warning(f"No images found in folder {folder_id}")
