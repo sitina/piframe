@@ -127,7 +127,7 @@ class ImageService(LoggerMixin):
             metadata_info = None
             if include_metadata:
                 self.logger.debug(f"Extracting image metadata [correlation_id={correlation_id}]")
-                metadata_info = self.get_image_metadata(image_info['id'], image_data)
+                metadata_info = self.get_image_metadata(image_info['id'], image_data, file_info=image_info)
             
             # Create Flask response
             response = self._create_image_response(image_info, image_data, metadata_info)
@@ -181,7 +181,7 @@ class ImageService(LoggerMixin):
             # Extract metadata if requested
             metadata_info = None
             if include_metadata:
-                metadata_info = self.get_image_metadata(file_id, image_data)
+                metadata_info = self.get_image_metadata(file_id, image_data, file_info=image_info)
             
             # Create Flask response
             response = self._create_image_response(image_info, image_data, metadata_info)
@@ -251,7 +251,7 @@ class ImageService(LoggerMixin):
             
             # Extract metadata
             self.logger.debug(f"Extracting image metadata [correlation_id={correlation_id}]")
-            metadata_info = self.get_image_metadata(image_info['id'], image_data)
+            metadata_info = self.get_image_metadata(image_info['id'], image_data, file_info=image_info)
             
             # Update synchronized state for later image serving
             self._current_image_id = image_info['id']
@@ -317,13 +317,15 @@ class ImageService(LoggerMixin):
             self.logger.debug(f"No synchronized metadata available (age: {sync_age:.1f}s), getting new image")
             return self.get_random_image_metadata()
     
-    def get_image_metadata(self, file_id: str, image_data: io.BytesIO) -> Optional[Dict[str, Any]]:
+    def get_image_metadata(self, file_id: str, image_data: io.BytesIO, 
+                          file_info: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """
         Extract and cache metadata for an image.
         
         Args:
             file_id: Google Drive file ID
             image_data: Image file data
+            file_info: Optional file information dictionary (may include createdTime)
             
         Returns:
             Dictionary with metadata information
@@ -337,9 +339,18 @@ class ImageService(LoggerMixin):
             return cached_metadata
         
         try:
+            # Get file info if not provided (to access createdTime)
+            if file_info is None:
+                file_info = self.drive_service.get_file_by_id(file_id)
+            
+            # Extract file created time if available
+            file_created_time = None
+            if file_info and 'createdTime' in file_info:
+                file_created_time = file_info['createdTime']
+            
             # Extract metadata using existing module
             image_data.seek(0)  # Ensure we're at the beginning
-            metadata = image_metadata.extract_image_metadata(image_data)
+            metadata = image_metadata.extract_image_metadata(image_data, file_created_time=file_created_time)
             display_info = image_metadata.format_metadata_for_display(metadata)
             
             # Package the metadata

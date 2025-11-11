@@ -89,7 +89,7 @@ class TestImageMetadata(unittest.TestCase):
         
         self.assertEqual(display_info['camera_info'], 'Canon')
 
-    @patch('image_metadata.exifread.process_file')
+    @patch('legacy.image_metadata.exifread.process_file')
     def test_extract_metadata_with_exif(self, mock_exifread):
         """Test metadata extraction with EXIF data"""
         # Mock EXIF data
@@ -107,7 +107,7 @@ class TestImageMetadata(unittest.TestCase):
         self.assertEqual(metadata['camera_make'], 'Canon')
         self.assertEqual(metadata['camera_model'], 'EOS R5')
 
-    @patch('image_metadata.exifread.process_file')
+    @patch('legacy.image_metadata.exifread.process_file')
     def test_extract_metadata_fallback_date(self, mock_exifread):
         """Test metadata extraction with fallback date fields"""
         # Mock EXIF data with fallback date
@@ -125,7 +125,7 @@ class TestImageMetadata(unittest.TestCase):
 
     def test_extract_metadata_invalid_date_format(self):
         """Test metadata extraction with invalid date format"""
-        with patch('image_metadata.exifread.process_file') as mock_exifread:
+        with patch('legacy.image_metadata.exifread.process_file') as mock_exifread:
             mock_tags = {
                 'EXIF DateTimeOriginal': 'invalid-date-format',
                 'Image Make': 'Canon'
@@ -140,7 +140,7 @@ class TestImageMetadata(unittest.TestCase):
 
     def test_extract_metadata_exception_handling(self):
         """Test metadata extraction with exception handling"""
-        with patch('image_metadata.exifread.process_file') as mock_exifread:
+        with patch('legacy.image_metadata.exifread.process_file') as mock_exifread:
             mock_exifread.side_effect = Exception("EXIF read error")
             
             metadata = extract_image_metadata(self.test_image_data)
@@ -160,6 +160,84 @@ class TestImageMetadata(unittest.TestCase):
         self.assertIsInstance(metadata, dict)
         self.assertIn('dimensions', metadata)
         self.assertIn('format', metadata)
+
+    @patch('legacy.image_metadata.exifread.process_file')
+    def test_extract_metadata_fallback_to_file_created_time(self, mock_exifread):
+        """Test metadata extraction falls back to file created time when EXIF is not available"""
+        # Mock EXIF data without date/time
+        mock_tags = {
+            'Image Make': 'Canon'
+        }
+        mock_exifread.return_value = mock_tags
+        
+        # Test with RFC 3339 format with microseconds and Z
+        file_created_time = '2023-12-25T14:30:45.123Z'
+        metadata = extract_image_metadata(self.test_image_data, file_created_time=file_created_time)
+        
+        self.assertEqual(metadata['creation_date'], '25.12.2023')
+        self.assertEqual(metadata['creation_time'], '14:30:45')
+        self.assertEqual(metadata['camera_make'], 'Canon')
+
+    @patch('legacy.image_metadata.exifread.process_file')
+    def test_extract_metadata_fallback_to_file_created_time_no_microseconds(self, mock_exifread):
+        """Test metadata extraction with file created time without microseconds"""
+        # Mock EXIF data without date/time
+        mock_tags = {}
+        mock_exifread.return_value = mock_tags
+        
+        # Test with RFC 3339 format without microseconds
+        file_created_time = '2023-12-25T14:30:45Z'
+        metadata = extract_image_metadata(self.test_image_data, file_created_time=file_created_time)
+        
+        self.assertEqual(metadata['creation_date'], '25.12.2023')
+        self.assertEqual(metadata['creation_time'], '14:30:45')
+
+    @patch('legacy.image_metadata.exifread.process_file')
+    def test_extract_metadata_exif_takes_precedence(self, mock_exifread):
+        """Test that EXIF date takes precedence over file created time"""
+        # Mock EXIF data with date
+        mock_tags = {
+            'EXIF DateTimeOriginal': '2023:12:25 14:30:45',
+            'Image Make': 'Canon'
+        }
+        mock_exifread.return_value = mock_tags
+        
+        # Provide file created time (should be ignored)
+        file_created_time = '2020-01-01T10:00:00Z'
+        metadata = extract_image_metadata(self.test_image_data, file_created_time=file_created_time)
+        
+        # Should use EXIF date, not file created time
+        self.assertEqual(metadata['creation_date'], '25.12.2023')
+        self.assertEqual(metadata['creation_time'], '14:30:45')
+
+    @patch('legacy.image_metadata.exifread.process_file')
+    def test_extract_metadata_fallback_invalid_file_time(self, mock_exifread):
+        """Test metadata extraction with invalid file created time format"""
+        # Mock EXIF data without date/time
+        mock_tags = {}
+        mock_exifread.return_value = mock_tags
+        
+        # Test with invalid format
+        file_created_time = 'invalid-date-format'
+        metadata = extract_image_metadata(self.test_image_data, file_created_time=file_created_time)
+        
+        # Should not crash and should not set date
+        self.assertIsNone(metadata['creation_date'])
+        self.assertIsNone(metadata['creation_time'])
+
+    @patch('legacy.image_metadata.exifread.process_file')
+    def test_extract_metadata_fallback_with_timezone_offset(self, mock_exifread):
+        """Test metadata extraction with file created time including timezone offset"""
+        # Mock EXIF data without date/time
+        mock_tags = {}
+        mock_exifread.return_value = mock_tags
+        
+        # Test with RFC 3339 format with timezone offset
+        file_created_time = '2023-12-25T14:30:45+02:00'
+        metadata = extract_image_metadata(self.test_image_data, file_created_time=file_created_time)
+        
+        self.assertEqual(metadata['creation_date'], '25.12.2023')
+        self.assertEqual(metadata['creation_time'], '14:30:45')
 
 
 if __name__ == '__main__':

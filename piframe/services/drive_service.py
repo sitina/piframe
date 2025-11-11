@@ -181,7 +181,7 @@ class DriveService(LoggerMixin):
                 request_params = {
                     'q': query,
                     'pageSize': 1000,  # Increased from 100 to 1000 for efficiency
-                    'fields': "nextPageToken, files(id, name, mimeType, webViewLink)"
+                    'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
                 }
                 if page_token:
                     request_params['pageToken'] = page_token
@@ -214,12 +214,18 @@ class DriveService(LoggerMixin):
             # Process results
             file_list = []
             for item in items:
-                file_list.append({
+                file_dict = {
                     'id': item['id'],
                     'name': item['name'],
                     'type': item['mimeType'],
                     'link': item['webViewLink']
-                })
+                }
+                # Include created and modified times if available
+                if 'createdTime' in item:
+                    file_dict['createdTime'] = item['createdTime']
+                if 'modifiedTime' in item:
+                    file_dict['modifiedTime'] = item['modifiedTime']
+                file_list.append(file_dict)
             
             # Cache results
             self.cache_manager.set('files', cache_key, file_list)
@@ -416,15 +422,21 @@ class DriveService(LoggerMixin):
         try:
             result = self.service.files().get(
                 fileId=file_id,
-                fields="id, name, mimeType, webViewLink"
+                fields="id, name, mimeType, webViewLink, createdTime, modifiedTime"
             ).execute()
             
-            return {
+            file_dict = {
                 'id': result['id'],
                 'name': result['name'],
                 'type': result['mimeType'],
                 'link': result['webViewLink']
             }
+            # Include created and modified times if available
+            if 'createdTime' in result:
+                file_dict['createdTime'] = result['createdTime']
+            if 'modifiedTime' in result:
+                file_dict['modifiedTime'] = result['modifiedTime']
+            return file_dict
         except Exception as e:
             self.logger.error(f"Error getting file {file_id}: {e}")
             return None

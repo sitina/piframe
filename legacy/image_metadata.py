@@ -7,10 +7,16 @@ from datetime import datetime
 from PIL import Image
 import os
 
-def extract_image_metadata(image_data):
+def extract_image_metadata(image_data, file_created_time=None):
     """
     Extract metadata from image data (BytesIO object)
-    Returns a dictionary with metadata information
+    
+    Args:
+        image_data: BytesIO object containing image data
+        file_created_time: Optional file creation time from Google Drive (RFC 3339 format)
+    
+    Returns:
+        Dictionary with metadata information
     """
     metadata = {
         'creation_date': None,
@@ -74,11 +80,21 @@ def extract_image_metadata(image_data):
         if 'Image Model' in tags:
             metadata['camera_model'] = str(tags['Image Model']).strip()
         
-        # If no EXIF date found, try to use file modification time
-        if not metadata['creation_date']:
-            # For Google Drive files, we might not have file modification time
-            # This would need to be handled differently
-            pass
+        # If no EXIF date found, try to use file creation time from Google Drive
+        if not metadata['creation_date'] and file_created_time:
+            try:
+                # Google Drive API returns timestamps in RFC 3339 format
+                # Examples: "2023-12-25T14:30:45.000Z" or "2023-12-25T14:30:45Z"
+                # Parse the timestamp
+                if 'T' in file_created_time:
+                    # Remove timezone info and microseconds if present
+                    date_str = file_created_time.split('.')[0].split('Z')[0].split('+')[0]
+                    dt = datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S')
+                    metadata['creation_date'] = dt.strftime("%-d.%-m.%Y")
+                    metadata['creation_time'] = dt.strftime("%H:%M:%S")
+            except (ValueError, AttributeError) as e:
+                # If parsing fails, silently continue without date
+                pass
             
     except Exception as e:
         print(f"Error extracting metadata: {e}")
