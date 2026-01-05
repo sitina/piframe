@@ -9,7 +9,7 @@ import pickle
 import random
 import threading
 import time
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials

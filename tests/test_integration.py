@@ -16,11 +16,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from flask import Flask, Response
 from app import PiFrameApp
 from piframe.config import Config
-import legacy.drive_pictures as drive_pictures
-import legacy.image_metadata as image_metadata
-
-# Skip Google Drive integration tests in CI environment
-SKIP_DRIVE_TESTS = os.getenv('CI') == 'true' or os.getenv('GITHUB_ACTIONS') == 'true'
 
 
 class TestIntegration(unittest.TestCase):
@@ -176,84 +171,6 @@ class TestIntegration(unittest.TestCase):
 
         response = self.client.get('/picture')
         self.assertEqual(response.status_code, 503)
-
-
-@unittest.skipIf(SKIP_DRIVE_TESTS, "Skipping Google Drive integration tests in CI environment")
-class TestLegacyDriveIntegration(unittest.TestCase):
-    """Integration tests for legacy drive_pictures module"""
-
-    def setUp(self):
-        """Set up test fixtures"""
-        # Reset global caches
-        drive_pictures._credentials_cache = None
-        drive_pictures._service_cache = None
-        drive_pictures._files_cache = {'data': [], 'ts': 0, 'folder_id': None}
-        drive_pictures._download_cache = {}
-        drive_pictures._metadata_cache = {}
-
-    def tearDown(self):
-        """Clean up after tests"""
-        # Reset global caches
-        drive_pictures._credentials_cache = None
-        drive_pictures._service_cache = None
-        drive_pictures._files_cache = {'data': [], 'ts': 0, 'folder_id': None}
-        drive_pictures._download_cache = {}
-        drive_pictures._metadata_cache = {}
-
-    @patch('legacy.drive_pictures.get_service')
-    @patch('legacy.drive_pictures.get_credentials')
-    def test_drive_integration_with_metadata(self, mock_get_creds, mock_get_service):
-        """Test Google Drive integration with metadata extraction"""
-        # Mock credentials
-        mock_creds = MagicMock()
-        mock_creds.valid = True
-        mock_get_creds.return_value = mock_creds
-
-        # Mock service
-        mock_service = MagicMock()
-        mock_files = [
-            {'id': '1', 'name': 'test1.jpg', 'mimeType': 'image/jpeg'},
-            {'id': '2', 'name': 'test2.jpg', 'mimeType': 'image/jpeg'}
-        ]
-        mock_response = {'files': mock_files}
-        mock_service.files().list().execute.return_value = mock_response
-        mock_get_service.return_value = mock_service
-
-        # Mock file download
-        mock_request = MagicMock()
-        mock_downloader = MagicMock()
-        mock_downloader.next_chunk.return_value = (None, True)
-        mock_service.files().get_media.return_value = mock_request
-
-        with patch('legacy.drive_pictures.MediaIoBaseDownload', return_value=mock_downloader):
-            with patch('legacy.drive_pictures.send_file', return_value=MagicMock()):
-                # Test the complete flow
-                response = drive_pictures.serve_random_image(include_metadata=True)
-
-                # Verify service was called (may be cached, so just check it was called)
-                self.assertGreaterEqual(mock_service.files().list().execute.call_count, 0)
-
-
-class TestMetadataExtractionIntegration(unittest.TestCase):
-    """Integration tests for metadata extraction"""
-
-    def test_metadata_extraction_integration(self):
-        """Test metadata extraction from image"""
-        from PIL import Image
-
-        # Create a test image
-        test_image = Image.new('RGB', (800, 600), color='red')
-        image_data = io.BytesIO()
-        test_image.save(image_data, format='JPEG')
-        image_data.seek(0)
-
-        # Test metadata extraction
-        metadata = image_metadata.extract_image_metadata(image_data)
-
-        # Verify basic metadata
-        self.assertEqual(metadata['dimensions'], '800 x 600')
-        self.assertEqual(metadata['format'], 'JPEG')
-        self.assertIsNotNone(metadata['file_size'])
 
 
 class TestConfigIntegration(unittest.TestCase):

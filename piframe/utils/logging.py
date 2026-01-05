@@ -91,29 +91,6 @@ class LoggerMixin:
         return get_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
 
 
-def log_function_call(func):
-    """
-    Decorator to log function entry and exit with parameters.
-    Useful for debugging service calls.
-    """
-    def wrapper(*args, **kwargs):
-        logger = get_logger(func.__module__)
-        func_name = f"{func.__qualname__}"
-        
-        # Log entry
-        logger.debug(f"Entering {func_name} with args={args}, kwargs={kwargs}")
-        
-        try:
-            result = func(*args, **kwargs)
-            logger.debug(f"Exiting {func_name} successfully")
-            return result
-        except Exception as e:
-            logger.error(f"Exception in {func_name}: {str(e)}", exc_info=True)
-            raise
-    
-    return wrapper
-
-
 def log_performance(func):
     """
     Decorator to log function execution time.

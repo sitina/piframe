@@ -23,6 +23,10 @@ logs/
 piframe.log
 performance_log*
 
+# Test artifacts
+nonexistent.json
+token.pickle
+
 # Test coverage reports
 htmlcov/
 .coverage

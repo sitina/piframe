@@ -6,36 +6,15 @@ Handles image serving, metadata extraction, and Flask responses.
 import io
 import time
 import hashlib
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any
 
 from flask import Response, send_file
 
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
 from ..utils.logging import LoggerMixin, log_performance
+from ..utils import metadata as image_metadata
 from .drive_service import DriveService
-
-# Import legacy module properly
-import os
-import importlib.util
-
-def _import_legacy_image_metadata():
-    """Import legacy image_metadata module without sys.path manipulation."""
-    # Get the project root directory (correct path: up 3 levels to get to piframe/)
-    current_dir = os.path.dirname(__file__)  # .../piframe/services/
-    services_parent = os.path.dirname(current_dir)  # .../piframe/
-    project_root = os.path.dirname(services_parent)  # .../piframe/ (project root)
-    legacy_path = os.path.join(project_root, 'legacy', 'image_metadata.py')
-    
-    spec = importlib.util.spec_from_file_location("image_metadata", legacy_path)
-    if spec and spec.loader:
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
-        return module
-    else:
-        raise ImportError("Could not load legacy image_metadata module")
-
-image_metadata = _import_legacy_image_metadata()
 
 
 class ImageService(LoggerMixin):
