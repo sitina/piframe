@@ -47,7 +47,7 @@ class TestPerformanceMonitoring(unittest.TestCase):
         self.assertGreaterEqual(stats['disk_usage'], 0)
         self.assertLessEqual(stats['disk_usage'], 100)
 
-    @patch('monitor_performance.psutil.cpu_percent')
+    @patch('legacy.monitor_performance.psutil.cpu_percent')
     def test_cpu_percent(self, mock_cpu_percent):
         """Test CPU percentage calculation"""
         mock_cpu_percent.return_value = 25.5
@@ -55,7 +55,7 @@ class TestPerformanceMonitoring(unittest.TestCase):
         stats = self.monitor.get_system_stats()
         self.assertEqual(stats['cpu_percent'], 25.5)
 
-    @patch('monitor_performance.psutil.virtual_memory')
+    @patch('legacy.monitor_performance.psutil.virtual_memory')
     def test_memory_stats(self, mock_virtual_memory):
         """Test memory statistics"""
         mock_memory = MagicMock()
@@ -67,7 +67,7 @@ class TestPerformanceMonitoring(unittest.TestCase):
         self.assertEqual(stats['memory_percent'], 65.2)
         self.assertEqual(stats['memory_available'], 2.0)
 
-    @patch('monitor_performance.psutil.disk_usage')
+    @patch('legacy.monitor_performance.psutil.disk_usage')
     def test_disk_usage(self, mock_disk_usage):
         """Test disk usage calculation"""
         mock_disk = MagicMock()
@@ -90,7 +90,7 @@ class TestPerformanceMonitoring(unittest.TestCase):
         temp = self.monitor.get_cpu_temperature()
         self.assertIsNone(temp)
 
-    @patch('monitor_performance.psutil.net_io_counters')
+    @patch('legacy.monitor_performance.psutil.net_io_counters')
     def test_network_io(self, mock_net_io):
         """Test network I/O statistics"""
         mock_io = MagicMock()
@@ -102,7 +102,7 @@ class TestPerformanceMonitoring(unittest.TestCase):
         self.assertEqual(network_io['bytes_sent'], 1024 * 1024)
         self.assertEqual(network_io['bytes_recv'], 2048 * 1024)
 
-    @patch('monitor_performance.psutil.net_io_counters', side_effect=Exception)
+    @patch('legacy.monitor_performance.psutil.net_io_counters', side_effect=Exception)
     def test_network_io_error(self, mock_net_io):
         """Test network I/O when error occurs"""
         network_io = self.monitor.get_network_io()
@@ -121,13 +121,13 @@ class TestPerformanceMonitoring(unittest.TestCase):
         self.assertEqual(self.monitor.stats_history[0]['cpu_percent'], 25.0)
         self.assertEqual(self.monitor.stats_history[1]['cpu_percent'], 30.0)
 
-    @patch('monitor_performance.time.sleep')
-    @patch('monitor_performance.json.dump')
+    @patch('legacy.monitor_performance.time.sleep')
+    @patch('legacy.monitor_performance.json.dump')
     @patch('builtins.open', new_callable=mock_open)
     def test_monitor_performance_short_duration(self, mock_file, mock_json_dump, mock_sleep):
         """Test performance monitoring with short duration"""
         # Mock time.time to control the loop
-        with patch('monitor_performance.time.time') as mock_time:
+        with patch('legacy.monitor_performance.time.time') as mock_time:
             mock_time.side_effect = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]  # More iterations
             
             stats = self.monitor.monitor_performance(duration_minutes=0.1, interval_seconds=1)
@@ -136,7 +136,7 @@ class TestPerformanceMonitoring(unittest.TestCase):
             self.assertIsInstance(stats, list)
             self.assertGreater(len(stats), 0)
 
-    @patch('monitor_performance.time.sleep')
+    @patch('legacy.monitor_performance.time.sleep')
     def test_monitor_performance_keyboard_interrupt(self, mock_sleep):
         """Test performance monitoring with keyboard interrupt"""
         mock_sleep.side_effect = KeyboardInterrupt()
