@@ -129,120 +129,151 @@ class DriveService(LoggerMixin):
         return creds
     
     @log_performance
-    def list_images_in_folder(self, folder_id: Optional[str] = None, 
-                            force_refresh: bool = False) -> List[Dict[str, Any]]:
+    def list_images_in_folder(self, folder_id: Optional[str] = None,
+                            force_refresh: bool = False,
+                            max_retries: int = 3) -> List[Dict[str, Any]]:
         """
         List all image files in a Google Drive folder.
-        
+
         Args:
             folder_id: Drive folder ID (uses config default if None)
             force_refresh: Skip cache and fetch fresh data
-            
+            max_retries: Maximum number of retry attempts for transient errors
+
         Returns:
             List of image file information dictionaries
         """
         if folder_id is None:
             folder_id = self.config.album_id
-        
+
         if not folder_id:
             self.logger.error("No folder ID provided and none configured")
             return []
-        
+
         cache_key = f"files_{folder_id}"
-        
+
         # Try cache first unless force refresh
         if not force_refresh:
             cached_files = self.cache_manager.get('files', cache_key)
             if cached_files is not None:
                 self.logger.debug(f"Using cached file list for folder {folder_id}")
                 return cached_files
-        
-        try:
-            self.logger.info(f"Fetching image list from Drive folder: {folder_id}")
-            
-            # Build query for image files
-            mime_query = ' or '.join([f"mimeType='{mt}'" for mt in self.IMAGE_MIME_TYPES])
-            query_parts = [f"({mime_query})"]
-            if folder_id:
-                query_parts.append(f"'{folder_id}' in parents")
-            
-            query = ' and '.join(query_parts)
-            
-            # Execute API calls with full pagination support
-            all_items = []
-            page_token = None
-            page_count = 0
-            
-            while True:
-                page_count += 1
-                self.logger.debug(f"Fetching page {page_count} from Drive API")
-                
-                # Execute API call for current page
-                request_params = {
-                    'q': query,
-                    'pageSize': 1000,  # Increased from 100 to 1000 for efficiency
-                    'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
-                }
-                if page_token:
-                    request_params['pageToken'] = page_token
-                
-                results = self.service.files().list(**request_params).execute()
-                
-                # Add items from current page
-                page_items = results.get('files', [])
-                all_items.extend(page_items)
-                
-                self.logger.debug(f"Page {page_count}: found {len(page_items)} items (total: {len(all_items)})")
-                
-                # Check if there are more pages
-                page_token = results.get('nextPageToken')
-                if not page_token:
-                    break
-                    
-                # Safety check to prevent infinite loops
-                if page_count > 100:  # Max 100,000 files (100 pages * 1000)
-                    self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
-                    break
-            
-            items = all_items
-            
-            if not items:
-                self.logger.warning(f"No images found in folder {folder_id}")
-                self.cache_manager.set('files', cache_key, [])
+
+        return self._fetch_images_with_retry(folder_id, cache_key, max_retries)
+
+    def _fetch_images_with_retry(self, folder_id: str, cache_key: str,
+                                  max_retries: int) -> List[Dict[str, Any]]:
+        """Fetch images from Drive with retry logic for transient errors."""
+        retry_delay = 1
+
+        for attempt in range(max_retries):
+            try:
+                self.logger.info(f"Fetching image list from Drive folder: {folder_id} (attempt {attempt + 1}/{max_retries})")
+
+                # Build query for image files
+                mime_query = ' or '.join([f"mimeType='{mt}'" for mt in self.IMAGE_MIME_TYPES])
+                query_parts = [f"({mime_query})"]
+                if folder_id:
+                    query_parts.append(f"'{folder_id}' in parents")
+
+                query = ' and '.join(query_parts)
+
+                # Execute API calls with full pagination support
+                all_items = []
+                page_token = None
+                page_count = 0
+
+                while True:
+                    page_count += 1
+                    self.logger.debug(f"Fetching page {page_count} from Drive API")
+
+                    # Execute API call for current page
+                    request_params = {
+                        'q': query,
+                        'pageSize': 1000,  # Increased from 100 to 1000 for efficiency
+                        'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
+                    }
+                    if page_token:
+                        request_params['pageToken'] = page_token
+
+                    results = self.service.files().list(**request_params).execute()
+
+                    # Add items from current page
+                    page_items = results.get('files', [])
+                    all_items.extend(page_items)
+
+                    self.logger.debug(f"Page {page_count}: found {len(page_items)} items (total: {len(all_items)})")
+
+                    # Check if there are more pages
+                    page_token = results.get('nextPageToken')
+                    if not page_token:
+                        break
+
+                    # Safety check to prevent infinite loops
+                    if page_count > 100:  # Max 100,000 files (100 pages * 1000)
+                        self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
+                        break
+
+                items = all_items
+
+                if not items:
+                    self.logger.warning(f"No images found in folder {folder_id}")
+                    self.cache_manager.set('files', cache_key, [])
+                    return []
+
+                # Process results
+                file_list = []
+                for item in items:
+                    file_dict = {
+                        'id': item['id'],
+                        'name': item['name'],
+                        'type': item['mimeType'],
+                        'link': item['webViewLink']
+                    }
+                    # Include created and modified times if available
+                    if 'createdTime' in item:
+                        file_dict['createdTime'] = item['createdTime']
+                    if 'modifiedTime' in item:
+                        file_dict['modifiedTime'] = item['modifiedTime']
+                    file_list.append(file_dict)
+
+                # Cache results
+                self.cache_manager.set('files', cache_key, file_list)
+
+                self.logger.info(f"Found {len(file_list)} images in folder {folder_id}")
+                return file_list
+
+            except Exception as e:
+                error_msg = str(e)
+                self.logger.warning(f"List images attempt {attempt + 1} failed: {error_msg}")
+
+                # Determine retry and reset strategy
+                should_retry, should_reset = self._should_retry_download(error_msg)
+
+                # Reset service on SSL errors to force new connection
+                if should_reset:
+                    self._reset_service()
+
+                # Handle retry logic
+                if should_retry and attempt < max_retries - 1:
+                    self.logger.info(f"Retrying list images in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+
+                # Final attempt failed or non-retryable error
+                self.logger.error(f"Error listing images from Drive: {e}", exc_info=True)
+
+                # Return cached data if available
+                cached_files = self.cache_manager.get('files', cache_key)
+                if cached_files is not None:
+                    self.logger.info("Using expired cached file list as fallback")
+                    return cached_files
+
                 return []
-            
-            # Process results
-            file_list = []
-            for item in items:
-                file_dict = {
-                    'id': item['id'],
-                    'name': item['name'],
-                    'type': item['mimeType'],
-                    'link': item['webViewLink']
-                }
-                # Include created and modified times if available
-                if 'createdTime' in item:
-                    file_dict['createdTime'] = item['createdTime']
-                if 'modifiedTime' in item:
-                    file_dict['modifiedTime'] = item['modifiedTime']
-                file_list.append(file_dict)
-            
-            # Cache results
-            self.cache_manager.set('files', cache_key, file_list)
-            
-            self.logger.info(f"Found {len(file_list)} images in folder {folder_id}")
-            return file_list
-            
-        except Exception as e:
-            self.logger.error(f"Error listing images from Drive: {e}", exc_info=True)
-            
-            # Return cached data if available
-            cached_files = self.cache_manager.get('files', cache_key)
-            if cached_files is not None:
-                self.logger.info("Using expired cached file list as fallback")
-                return cached_files
-            
-            return []
+
+        # Should not reach here, but return empty list as fallback
+        return []
     
     @log_performance
     def download_file(self, file_id: str, max_retries: int = 3) -> Optional[io.BytesIO]:
@@ -323,25 +354,47 @@ class DriveService(LoggerMixin):
             except Exception as e:
                 error_msg = str(e)
                 self.logger.warning(f"Download attempt {attempt + 1} failed: {error_msg}")
-                
-                # Handle specific errors
-                if self._should_retry_download(error_msg):
-                    if attempt < max_retries - 1:
-                        self.logger.info(f"Retrying download in {retry_delay} seconds...")
-                        time.sleep(retry_delay)
-                        retry_delay *= 2  # Exponential backoff
-                        continue
-                
-                # Don't retry for certain errors
+
+                # Determine retry and reset strategy
+                should_retry, should_reset = self._should_retry_download(error_msg)
+
+                # Reset service on SSL errors to force new connection
+                if should_reset:
+                    self._reset_service()
+
+                # Handle retry logic
+                if should_retry and attempt < max_retries - 1:
+                    self.logger.info(f"Retrying download in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+
+                # Don't retry for non-retryable errors
                 break
         
         self.logger.error(f"Failed to download file {file_id} after {max_retries} attempts")
         return None
     
-    def _should_retry_download(self, error_msg: str) -> bool:
-        """Determine if a download error should trigger a retry."""
-        retry_keywords = ['ssl', 'timeout', 'connection', 'network']
-        return any(keyword in error_msg.lower() for keyword in retry_keywords)
+    def _reset_service(self) -> None:
+        """Reset the Drive service to force new connection."""
+        self._service = None
+        self.logger.info("Drive service reset - will create new connection on next request")
+
+    def _should_retry_download(self, error_msg: str) -> tuple:
+        """
+        Determine if a download error should trigger a retry and/or service reset.
+
+        Returns:
+            Tuple of (should_retry, should_reset_service)
+        """
+        retry_keywords = ['timeout', 'connection', 'network', 'reset', 'broken pipe']
+        ssl_keywords = ['ssl', 'handshake', 'certificate', 'record layer']
+
+        error_lower = error_msg.lower()
+        should_retry = any(keyword in error_lower for keyword in retry_keywords + ssl_keywords)
+        should_reset = any(keyword in error_lower for keyword in ssl_keywords)
+
+        return should_retry, should_reset
     
     def _cache_download(self, file_id: str, file_buffer: io.BytesIO) -> None:
         """Cache downloaded file with size management."""
