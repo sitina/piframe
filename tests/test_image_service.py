@@ -281,48 +281,53 @@ class TestImageService(unittest.TestCase):
 
     def test_get_random_image_metadata_success(self):
         """Test getting random image metadata successfully."""
-        # Set up current metadata
+        # Set up mock image info and data (BytesIO for _generate_image_hash)
+        mock_image_info = {'id': 'test_id', 'name': 'test.jpg'}
+        mock_image_data = io.BytesIO(b'fake_image_data')
         display_info = {
             'creation_date': '25.12.2023',
             'creation_time': '14:30:45',
             'camera_info': 'Canon EOS R5',
             'dimensions': '4000 x 3000'
         }
-        self.image_service._current_image_metadata = {
-            'display_info': display_info
-        }
-        
-        with patch.object(self.image_service, 'serve_random_image') as mock_serve:
-            mock_serve.return_value = MagicMock()
-            
+        mock_metadata = {'display_info': display_info}
+
+        # Mock the drive_service methods
+        self.mock_drive_service.get_random_image.return_value = mock_image_info
+        self.mock_drive_service.download_file.return_value = mock_image_data
+
+        with patch.object(self.image_service, 'get_image_metadata') as mock_get_metadata:
+            mock_get_metadata.return_value = mock_metadata
+
             result = self.image_service.get_random_image_metadata()
-            
+
             self.assertEqual(result['creation_date'], '25.12.2023')
             self.assertEqual(result['camera_info'], 'Canon EOS R5')
             self.assertIn('picture_url', result)
-            mock_serve.assert_called_with(force_new=True, include_metadata=True)
+            self.mock_drive_service.get_random_image.assert_called_once()
+            self.mock_drive_service.download_file.assert_called_once_with('test_id')
 
     def test_get_random_image_metadata_no_metadata(self):
         """Test getting random image metadata when none available."""
-        self.image_service._current_image_metadata = None
-        
-        with patch.object(self.image_service, 'serve_random_image') as mock_serve:
-            mock_serve.return_value = MagicMock()
-            
-            result = self.image_service.get_random_image_metadata()
-            
-            # Should return default metadata
-            self.assertEqual(result['creation_date'], 'Unknown')
-            self.assertEqual(result['camera_info'], 'Unknown camera')
+        # Mock drive_service to return no image
+        self.mock_drive_service.get_random_image.return_value = None
+
+        result = self.image_service.get_random_image_metadata()
+
+        # Should return default metadata
+        self.assertEqual(result['creation_date'], 'Unknown')
+        self.assertEqual(result['camera_info'], 'Unknown camera')
 
     def test_get_random_image_metadata_exception(self):
         """Test getting random image metadata with exception."""
-        with patch.object(self.image_service, 'serve_random_image', side_effect=Exception("Test error")):
-            result = self.image_service.get_random_image_metadata()
-            
-            # Should return default metadata
-            self.assertEqual(result['creation_date'], 'Unknown')
-            self.assertEqual(result['camera_info'], 'Unknown camera')
+        # Make drive_service raise an exception
+        self.mock_drive_service.get_random_image.side_effect = Exception("Test error")
+
+        result = self.image_service.get_random_image_metadata()
+
+        # Should return default metadata
+        self.assertEqual(result['creation_date'], 'Unknown')
+        self.assertEqual(result['camera_info'], 'Unknown camera')
 
     @patch('piframe.services.image_service.image_metadata')
     def test_get_image_metadata_success(self, mock_metadata_module):
@@ -523,6 +528,225 @@ class TestImageService(unittest.TestCase):
         self.assertIsInstance(result, Response)
         self.assertEqual(result.status_code, 500)
         self.assertIn(b'Internal server error', result.data)
+
+    def test_get_synchronized_metadata_current(self):
+        """Test getting synchronized metadata when current image exists."""
+        # Set up synchronized state
+        self.image_service._current_image_id = 'test_id'
+        self.image_service._current_image_timestamp = time.time() - 10  # 10 seconds ago
+        self.image_service._current_image_hash = 'test_hash'
+        self.image_service._current_image_metadata = {
+            'display_info': {
+                'creation_date': '25.12.2023',
+                'creation_time': '14:30:45',
+                'camera_info': 'Canon EOS R5',
+                'dimensions': '4000 x 3000'
+            }
+        }
+        
+        result = self.image_service.get_synchronized_metadata()
+        
+        self.assertEqual(result['creation_date'], '25.12.2023')
+        self.assertEqual(result['image_id'], 'test_id')
+        self.assertTrue(result['is_synchronized'])
+        self.assertIn('sync_age', result)
+
+    def test_get_synchronized_metadata_expired(self):
+        """Test getting synchronized metadata when current image is expired."""
+        # Set up expired synchronized state (timeout is 60 seconds)
+        self.image_service._current_image_id = 'test_id'
+        self.image_service._current_image_timestamp = time.time() - 70  # 70 seconds ago
+        
+        with patch.object(self.image_service, 'get_random_image_metadata') as mock_get:
+            mock_get.return_value = {
+                'creation_date': '26.12.2023',
+                'image_id': 'new_id'
+            }
+            
+            result = self.image_service.get_synchronized_metadata()
+            
+            # Should fall back to getting new metadata
+            mock_get.assert_called_once()
+            self.assertEqual(result['creation_date'], '26.12.2023')
+
+    def test_get_synchronized_metadata_no_current(self):
+        """Test getting synchronized metadata when no current image."""
+        with patch.object(self.image_service, 'get_random_image_metadata') as mock_get:
+            mock_get.return_value = {
+                'creation_date': '26.12.2023',
+                'image_id': 'new_id'
+            }
+            
+            result = self.image_service.get_synchronized_metadata()
+            
+            mock_get.assert_called_once()
+            self.assertEqual(result['creation_date'], '26.12.2023')
+
+    def test_generate_image_hash(self):
+        """Test image hash generation."""
+        image_data = io.BytesIO(b'test image data for hashing')
+        
+        hash1 = self.image_service._generate_image_hash(image_data)
+        
+        # Reset and generate again - should be same
+        image_data.seek(0)
+        hash2 = self.image_service._generate_image_hash(image_data)
+        
+        self.assertEqual(hash1, hash2)
+        self.assertEqual(len(hash1), 16)  # First 16 characters of SHA256
+
+    def test_generate_image_hash_different_data(self):
+        """Test that different image data produces different hashes."""
+        image_data1 = io.BytesIO(b'test image data 1')
+        image_data2 = io.BytesIO(b'test image data 2')
+        
+        hash1 = self.image_service._generate_image_hash(image_data1)
+        hash2 = self.image_service._generate_image_hash(image_data2)
+        
+        self.assertNotEqual(hash1, hash2)
+
+    def test_get_correlation_id(self):
+        """Test correlation ID generation."""
+        id1 = self.image_service._get_correlation_id()
+        id2 = self.image_service._get_correlation_id()
+        
+        # Should be unique
+        self.assertNotEqual(id1, id2)
+        # Should contain sync_ prefix
+        self.assertTrue(id1.startswith('sync_'))
+
+    @patch('piframe.services.image_service.send_file')
+    def test_serve_random_image_with_hash_and_correlation(self, mock_send_file):
+        """Test that serve_random_image includes hash and correlation ID."""
+        image_info = {
+            'id': 'test_id',
+            'name': 'test.jpg',
+            'type': 'image/jpeg'
+        }
+        self.mock_drive_service.get_random_image.return_value = image_info
+        
+        image_data = io.BytesIO(b'fake image data')
+        self.mock_drive_service.download_file.return_value = image_data
+        
+        mock_response = MagicMock(spec=Response)
+        mock_response.headers = {}
+        mock_send_file.return_value = mock_response
+        
+        result = self.image_service.serve_random_image(include_metadata=True)
+        
+        # Check headers were set
+        self.assertIn('X-Correlation-ID', mock_response.headers)
+        self.assertIn('X-Image-Hash', mock_response.headers)
+        # Check synchronized state was updated
+        self.assertEqual(self.image_service._current_image_id, 'test_id')
+        self.assertIsNotNone(self.image_service._current_image_hash)
+
+    def test_get_image_metadata_with_file_info(self):
+        """Test getting image metadata with provided file info."""
+        self.mock_cache_manager.get.return_value = None
+        
+        file_info = {
+            'id': 'test_id',
+            'createdTime': '2023-12-25T14:30:45.000Z'
+        }
+        
+        with patch('piframe.services.image_service.image_metadata') as mock_metadata_module:
+            raw_metadata = {'creation_date': '25.12.2023'}
+            display_info = {'creation_date': '25.12.2023'}
+            
+            mock_metadata_module.extract_image_metadata.return_value = raw_metadata
+            mock_metadata_module.format_metadata_for_display.return_value = display_info
+            
+            image_data = io.BytesIO(b'fake image data')
+            
+            result = self.image_service.get_image_metadata('test_id', image_data, file_info=file_info)
+            
+            # Should use provided file_info
+            mock_metadata_module.extract_image_metadata.assert_called_once()
+            call_args = mock_metadata_module.extract_image_metadata.call_args
+            self.assertEqual(call_args[1]['file_created_time'], '2023-12-25T14:30:45.000Z')
+
+    def test_get_image_metadata_fetches_file_info(self):
+        """Test that get_image_metadata fetches file info if not provided."""
+        self.mock_cache_manager.get.return_value = None
+        
+        file_info = {'id': 'test_id', 'createdTime': '2023-12-25T14:30:45.000Z'}
+        self.mock_drive_service.get_file_by_id.return_value = file_info
+        
+        with patch('piframe.services.image_service.image_metadata') as mock_metadata_module:
+            raw_metadata = {'creation_date': '25.12.2023'}
+            display_info = {'creation_date': '25.12.2023'}
+            
+            mock_metadata_module.extract_image_metadata.return_value = raw_metadata
+            mock_metadata_module.format_metadata_for_display.return_value = display_info
+            
+            image_data = io.BytesIO(b'fake image data')
+            
+            result = self.image_service.get_image_metadata('test_id', image_data)
+            
+            # Should fetch file info
+            self.mock_drive_service.get_file_by_id.assert_called_once_with('test_id')
+
+    def test_get_random_image_metadata_no_images(self):
+        """Test getting metadata when no images available."""
+        self.mock_drive_service.get_random_image.return_value = None
+        
+        result = self.image_service.get_random_image_metadata()
+        
+        # Should return default metadata
+        self.assertEqual(result['creation_date'], 'Unknown')
+        self.assertEqual(result['image_id'], None)
+
+    def test_get_random_image_metadata_download_fails(self):
+        """Test getting metadata when download fails."""
+        image_info = {'id': 'test_id', 'name': 'test.jpg'}
+        self.mock_drive_service.get_random_image.return_value = image_info
+        self.mock_drive_service.download_file.return_value = None
+        
+        result = self.image_service.get_random_image_metadata()
+        
+        # Should return default metadata
+        self.assertEqual(result['creation_date'], 'Unknown')
+
+    @patch('piframe.services.image_service.send_file')
+    def test_create_image_response_cache_headers(self, mock_send_file):
+        """Test that image response includes proper cache headers."""
+        image_info = {
+            'id': 'test_id',
+            'name': 'test.jpg',
+            'type': 'image/jpeg'
+        }
+        image_data = io.BytesIO(b'fake image data')
+        
+        mock_response = MagicMock()
+        mock_response.headers = {}
+        mock_send_file.return_value = mock_response
+        
+        result = self.image_service._create_image_response(image_info, image_data)
+        
+        # Check cache control headers
+        self.assertEqual(mock_response.headers['Cache-Control'], 'no-cache, no-store, must-revalidate')
+        self.assertEqual(mock_response.headers['Pragma'], 'no-cache')
+        self.assertEqual(mock_response.headers['Expires'], '0')
+        self.assertIn('ETag', mock_response.headers)
+        self.assertIn('X-Image-ID', mock_response.headers)
+
+    def test_serve_synchronized_image_with_hash_header(self):
+        """Test that synchronized image includes hash in headers."""
+        self.image_service._current_image_id = 'test_id'
+        self.image_service._current_image_timestamp = time.time() - 10
+        self.image_service._current_image_hash = 'test_hash_12345'
+        
+        mock_response = MagicMock()
+        mock_response.headers = {}
+        
+        with patch.object(self.image_service, 'serve_image_by_id', return_value=mock_response):
+            result = self.image_service.serve_synchronized_image()
+            
+            # Check sync headers
+            self.assertEqual(mock_response.headers['X-Sync-Status'], 'synchronized')
+            self.assertEqual(mock_response.headers['X-Image-Hash'], 'test_hash_12345')
+            self.assertIn('X-Sync-Age', mock_response.headers)
 
 
 if __name__ == '__main__':
