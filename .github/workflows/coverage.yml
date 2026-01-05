@@ -36,10 +36,7 @@ jobs:
         # Run modular architecture tests with coverage
         coverage run --source=piframe -m unittest discover tests -p "test_*_service.py"
         coverage run --append --source=piframe -m unittest tests.test_cache_manager
-        
-        # Run performance tests
-        coverage run --append --source=. -m unittest tests.test_performance || echo "Performance tests completed"
-        
+
         # Generate coverage report
         coverage report -m
         coverage xml

@@ -164,17 +164,3 @@ jobs:
         print(f'✅ Core functionality works on {os.name} platform')
         "
 
-    - name: Test legacy modules
-      run: |
-        python -c "
-        import sys
-        sys.path.insert(0, '.')
-        
-        # Test legacy modules still work
-        import legacy.monitor_performance as monitor_performance
-        
-        monitor = monitor_performance.PerformanceMonitor()
-        stats = monitor.get_system_stats()
-        
-        print('✅ Legacy modules compatible')
-        "

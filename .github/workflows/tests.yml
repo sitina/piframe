@@ -49,11 +49,10 @@ jobs:
         python -m unittest discover tests -p "test_*_service.py" -v
         python -m unittest tests.test_cache_manager -v
 
-    - name: Run performance and config tests
+    - name: Run config tests
       run: |
-        python -m unittest tests.test_performance -v
         python -m unittest tests.test_config -v
-      continue-on-error: true  # Don't fail if legacy tests have issues
+      continue-on-error: true
 
     - name: Run integration tests (selected)
       run: |
@@ -196,65 +195,6 @@ jobs:
           tests.test_drive_service.TestDriveService.test_init \
           tests.test_image_service.TestImageService.test_init \
           -v
-
-  test-compatibility:
-    runs-on: ubuntu-latest
-    name: Legacy compatibility tests
-    
-    env:
-      CI: true  # Skip Google Drive integration tests
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Python 3.11
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-        cache: 'pip'
-
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    - name: Test legacy modules still import
-      run: |
-        python -c "
-        import sys
-        sys.path.insert(0, '.')
-        
-        # Test legacy modules
-        import legacy.drive_pictures as drive_pictures
-        import legacy.image_metadata as image_metadata
-        import legacy.monitor_performance as monitor_performance
-        
-        print('✅ Legacy modules import successfully')
-        
-        # Test performance monitor
-        monitor = monitor_performance.PerformanceMonitor()
-        stats = monitor.get_system_stats()
-        assert 'timestamp' in stats
-        assert 'cpu_percent' in stats
-        
-        print('✅ Performance monitoring works')
-        "
-
-    - name: Test backward compatibility
-      run: |
-        # Test that old API still works alongside new modular architecture
-        python -c "
-        import sys
-        sys.path.insert(0, '.')
-        
-        # Test that we can import both old and new systems
-        import legacy.drive_pictures as drive_pictures
-        from piframe.services.drive_service import DriveService
-        from piframe.config.settings import Config
-        
-        print('✅ Old and new systems coexist')
-        "
 
   lint:
     runs-on: ubuntu-latest
