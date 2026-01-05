@@ -89,7 +89,6 @@ python scripts/test_drive_connection.py
 python scripts/run_tests.py --test-file tests/test_app.py
 
 # Other test utilities
-python scripts/test_metadata.py    # Test image metadata
 python scripts/test_sync.py        # Test synchronized endpoints
 ```
 
@@ -100,9 +99,6 @@ autopep8 --recursive --in-place .
 
 # Sort imports
 isort .
-
-# Performance monitoring
-python legacy/monitor_performance.py
 ```
 
 ## Core Architecture (Refactored - Clean Modular Design)
@@ -247,7 +243,6 @@ piframe/
 - Existing `config/config.json` files continue to work (with legacy key mapping)
 - All original API endpoints preserved
 - Same deployment scripts and service files remain functional
-- Original code preserved in `legacy/` directory as fallbacks
 
 **What Changed**:
 - **Architecture**: Modular service-based architecture with dependency injection

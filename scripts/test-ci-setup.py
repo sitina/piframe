@@ -94,9 +94,7 @@ def test_imports():
         "from piframe.services.weather_service import WeatherService",
         "from piframe.services.drive_service import DriveService",
         "from piframe.services.image_service import ImageService",
-        "import legacy.drive_pictures",
-        "import legacy.image_metadata", 
-        "import legacy.monitor_performance"
+        "from piframe.utils.metadata import extract_image_metadata"
     ]
     
     for import_test in import_tests:

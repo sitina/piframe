@@ -12,39 +12,45 @@ def test_drive_connection():
     """Test Google Drive connection and list images"""
     try:
         print("Testing Google Drive connection...")
-        
-        # Import drive_pictures module from legacy
-        import legacy.drive_pictures as drive_pictures
-        
+
+        # Import modules from new architecture
+        from piframe.config.settings import Config
+        from piframe.services.drive_service import DriveService
+        from piframe.models.cache import CacheManager
+
+        # Load configuration
+        config = Config.load()
+        cache_manager = CacheManager(config)
+        drive_service = DriveService(config, cache_manager)
+
         # Test service creation
         print("Creating Google Drive service...")
-        service = drive_pictures.get_service()
+        service = drive_service._get_service()
         print("✅ Service created successfully")
-        
-        # Load config to get folder ID
-        config = drive_pictures.load_config()
-        folder_id = config['album_id']
+
+        # Get folder ID from config
+        folder_id = config.album_id
         print(f"Listing images from folder: {folder_id}")
-        
-        files = drive_pictures.list_images_in_folder(folder_id)
-        
+
+        files = drive_service.list_images_in_folder(folder_id)
+
         if not files:
             print("❌ No images found in folder")
             return False
-        
+
         print(f"✅ Found {len(files)} images in folder")
-        
+
         # Show first few images
         for i, file_info in enumerate(files[:5]):
             print(f"  {i+1}. {file_info['name']} ({file_info['type']})")
-        
+
         # Test downloading one image
         if files:
             test_file = files[0]
             print(f"\nTesting download of: {test_file['name']}")
-            
-            file_data = drive_pictures.download_file(test_file['id'])
-            
+
+            file_data = drive_service.download_file(test_file['id'])
+
             if file_data:
                 print(f"✅ Successfully downloaded {test_file['name']}")
                 print(f"   File size: {file_data.getbuffer().nbytes} bytes")
@@ -52,9 +58,9 @@ def test_drive_connection():
             else:
                 print(f"❌ Failed to download {test_file['name']}")
                 return False
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ Error testing Drive connection: {str(e)}")
         import traceback
@@ -65,26 +71,25 @@ def test_image_metadata():
     """Test image metadata extraction"""
     try:
         print("\nTesting image metadata extraction...")
-        
-        import legacy.drive_pictures as drive_pictures
-        import legacy.image_metadata as image_metadata
+
+        from piframe.utils.metadata import extract_image_metadata
         from PIL import Image
         import io
-        
+
         # Create a test image
         test_image = Image.new('RGB', (800, 600), color='red')
         image_data = io.BytesIO()
         test_image.save(image_data, format='JPEG')
         image_data.seek(0)
-        
+
         # Test metadata extraction
-        metadata = image_metadata.extract_image_metadata(image_data)
+        metadata = extract_image_metadata(image_data)
         print(f"✅ Metadata extraction successful")
         print(f"   Dimensions: {metadata.get('dimensions', 'Unknown')}")
         print(f"   Format: {metadata.get('format', 'Unknown')}")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ Error testing metadata extraction: {str(e)}")
         import traceback
@@ -95,13 +100,13 @@ def main():
     """Main test function"""
     print("PiFrame Google Drive Connection Test")
     print("=" * 40)
-    
+
     # Test Drive connection
     drive_ok = test_drive_connection()
-    
+
     # Test metadata extraction
     metadata_ok = test_image_metadata()
-    
+
     print("\n" + "=" * 40)
     if drive_ok and metadata_ok:
         print("✅ All tests passed! Google Drive connection is working.")
@@ -111,4 +116,4 @@ def main():
         return 1
 
 if __name__ == '__main__':
-    sys.exit(main()) 
+    sys.exit(main())

@@ -8,7 +8,7 @@
 
 ## Overview
 
-PiFrame has a comprehensive test suite covering both the legacy monolithic code and the new modular architecture. The testing infrastructure includes unit tests, integration tests, performance tests, and automated CI/CD pipelines.
+PiFrame has a comprehensive test suite covering the modular architecture. The testing infrastructure includes unit tests, integration tests, and automated CI/CD pipelines.
 
 ## Test Structure
 
@@ -22,16 +22,14 @@ tests/
 └── test_image_service.py      # Image serving & metadata - 24 tests
 ```
 
-### Legacy Tests (Maintained for Compatibility)
+### Additional Tests
 
 ```
 tests/
 ├── test_app.py               # Flask routes and integration
 ├── test_config.py            # Configuration management
-├── test_drive_pictures.py    # Legacy Drive integration
-├── test_image_metadata.py    # EXIF data extraction
 ├── test_integration.py       # End-to-end workflows
-└── test_performance.py       # System performance monitoring
+└── test_background_tasks.py  # Background task management
 ```
 
 ## Running Tests Locally

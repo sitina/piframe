@@ -352,15 +352,6 @@ PiFrame uses a clean, modular architecture with proper separation of concerns:
 - **Network Optimization**: Connection pooling and timeouts
 - **Error Resilience**: Comprehensive error handling with fallback to cached data
 
-## Monitoring
-
-Monitor performance with:
-```bash
-python legacy/monitor_performance.py
-```
-
-Performance logs are saved to `logs/performance/` directory.
-
 ## Contributing
 
 1. Fork the repository
@@ -407,10 +398,6 @@ piframe/
 ├── tests/                          # Comprehensive test suite
 │   ├── test_*.py                  # Unit and integration tests
 │   └── __init__.py
-├── legacy/                         # Original implementation (preserved)
-│   ├── app_original.py            # Original monolithic app
-│   ├── drive_pictures.py          # Legacy drive integration
-│   └── image_metadata.py          # Legacy metadata extraction
 ├── logs/                           # Log files (gitignored)
 │   ├── piframe.log                # Main application logs
 │   └── performance/               # Performance monitoring logs

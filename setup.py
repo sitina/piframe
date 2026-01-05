@@ -106,8 +106,16 @@ def main():
     if config.get('album'):
         print("Testing Google Drive connection...")
         try:
-            import legacy.drive_pictures as drive_pictures
-            files = drive_pictures.list_images_in_folder(config['album'])
+            from piframe.config.settings import Config as PiFrameConfig
+            from piframe.services.drive_service import DriveService
+            from piframe.models.cache import CacheManager
+
+            piframe_config = PiFrameConfig()
+            piframe_config.album_id = config['album']
+            cache_manager = CacheManager(piframe_config)
+            drive_service = DriveService(piframe_config, cache_manager)
+
+            files = drive_service.list_images_in_folder(config['album'])
             print(f"✅ Successfully connected! Found {len(files)} images.")
         except Exception as e:
             print(f"❌ Error connecting to Google Drive: {e}")
