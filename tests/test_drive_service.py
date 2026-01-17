@@ -500,14 +500,32 @@ class TestDriveService(unittest.TestCase):
 
     def test_should_retry_download(self):
         """Test download retry logic."""
-        # Should retry
-        self.assertTrue(self.drive_service._should_retry_download("SSL error occurred"))
-        self.assertTrue(self.drive_service._should_retry_download("Connection timeout"))
-        self.assertTrue(self.drive_service._should_retry_download("Network unreachable"))
-        
-        # Should not retry
-        self.assertFalse(self.drive_service._should_retry_download("File not found"))
-        self.assertFalse(self.drive_service._should_retry_download("Permission denied"))
+        # Should retry AND reset service (SSL errors)
+        should_retry, should_reset = self.drive_service._should_retry_download("SSL error occurred")
+        self.assertTrue(should_retry)
+        self.assertTrue(should_reset)
+
+        should_retry, should_reset = self.drive_service._should_retry_download("record layer failure")
+        self.assertTrue(should_retry)
+        self.assertTrue(should_reset)
+
+        # Should retry but NOT reset service (network errors)
+        should_retry, should_reset = self.drive_service._should_retry_download("Connection timeout")
+        self.assertTrue(should_retry)
+        self.assertFalse(should_reset)
+
+        should_retry, should_reset = self.drive_service._should_retry_download("Network unreachable")
+        self.assertTrue(should_retry)
+        self.assertFalse(should_reset)
+
+        # Should not retry at all
+        should_retry, should_reset = self.drive_service._should_retry_download("File not found")
+        self.assertFalse(should_retry)
+        self.assertFalse(should_reset)
+
+        should_retry, should_reset = self.drive_service._should_retry_download("Permission denied")
+        self.assertFalse(should_retry)
+        self.assertFalse(should_reset)
 
     def test_cache_download(self):
         """Test download caching."""
