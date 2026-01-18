@@ -272,32 +272,38 @@ def create_standard_tasks(weather_service, drive_service, image_service, config)
         error_interval=config.error_retry_interval
     )
     
-    # Image preloading task
-    def preload_images():
-        # Refresh file list
-        drive_service.force_refresh_file_list()
-        
-        # Clear download cache occasionally for variety
-        if hasattr(preload_images, 'call_count'):
-            preload_images.call_count += 1
-        else:
-            preload_images.call_count = 1
-        
-        # Clear cache every 5 calls (roughly every hour with default 15min interval)
-        if preload_images.call_count % 5 == 0:
-            drive_service.clear_download_cache()
-        
-        # Preload a couple random images
-        for i in range(2):
-            try:
-                image_info = drive_service.get_random_image(avoid_recent=False)
-                if image_info:
-                    drive_service.download_file(image_info['id'])
-            except Exception as e:
-                # Log preload errors but don't let them stop the task
-                from ..utils.logging import get_logger
-                logger = get_logger(__name__)
-                logger.warning(f"Failed to preload image {i+1}/2: {e}")
+    # Image preloading task with call counter
+    class ImagePreloader:
+        """Callable class for image preloading with call count tracking."""
+
+        def __init__(self, drive_service):
+            self.drive_service = drive_service
+            self.call_count = 0
+
+        def __call__(self):
+            # Refresh file list
+            self.drive_service.force_refresh_file_list()
+
+            # Clear download cache occasionally for variety
+            self.call_count += 1
+
+            # Clear cache every 5 calls (roughly every hour with default 15min interval)
+            if self.call_count % 5 == 0:
+                self.drive_service.clear_download_cache()
+
+            # Preload a couple random images
+            for i in range(2):
+                try:
+                    image_info = self.drive_service.get_random_image(avoid_recent=False)
+                    if image_info:
+                        self.drive_service.download_file(image_info['id'])
+                except Exception as e:
+                    # Log preload errors but don't let them stop the task
+                    from ..utils.logging import get_logger
+                    logger = get_logger(__name__)
+                    logger.warning(f"Failed to preload image {i+1}/2: {e}")
+
+    preload_images = ImagePreloader(drive_service)
     
     task_manager.add_task(
         name="image_preload",
