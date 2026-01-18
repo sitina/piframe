@@ -89,7 +89,7 @@ def _extract_exif_datetime(tags: Dict, metadata: Dict[str, Any]) -> bool:
             date_str = str(tags[tag_name])
             try:
                 dt = datetime.strptime(date_str, '%Y:%m:%d %H:%M:%S')
-                metadata['creation_date'] = dt.strftime("%-d.%-m.%Y")
+                metadata['creation_date'] = f"{dt.day}.{dt.month}.{dt.year}"
                 metadata['creation_time'] = dt.strftime("%H:%M:%S")
                 return True
             except ValueError:
@@ -114,7 +114,7 @@ def _extract_file_datetime(file_created_time: str, metadata: Dict[str, Any]) -> 
             # Remove timezone info and microseconds if present
             date_str = file_created_time.split('.')[0].split('Z')[0].split('+')[0]
             dt = datetime.strptime(date_str, '%Y-%m-%dT%H:%M:%S')
-            metadata['creation_date'] = dt.strftime("%-d.%-m.%Y")
+            metadata['creation_date'] = f"{dt.day}.{dt.month}.{dt.year}"
             metadata['creation_time'] = dt.strftime("%H:%M:%S")
             return True
     except (ValueError, AttributeError):

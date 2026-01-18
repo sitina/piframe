@@ -14,20 +14,7 @@ aggressive = 2
 recursive = true
 ignore = ["E203", "W503"]
 
-[tool.flake8]
-max-line-length = 88
-extend-ignore = ["E203", "W503", "E501", "F401", "F403", "F405"]
-exclude = [
-    ".git",
-    "__pycache__",
-    ".venv",
-    "venv",
-    ".env",
-    ".vscode",
-    "*.egg-info",
-    "build",
-    "dist"
-]
+# Note: flake8 config is in .flake8 (flake8 doesn't read pyproject.toml natively)
 
 [tool.isort]
 profile = "black"

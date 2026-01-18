@@ -3,10 +3,12 @@ Centralized logging setup for PiFrame application.
 Replaces scattered print() statements with structured logging.
 """
 
+import functools
 import logging
 import sys
-from typing import Optional
+import time
 from pathlib import Path
+from typing import Optional
 
 
 def setup_logging(
@@ -96,12 +98,11 @@ def log_performance(func):
     Decorator to log function execution time.
     Useful for monitoring performance of slow operations.
     """
-    import time
-    
+    @functools.wraps(func)
     def wrapper(*args, **kwargs):
         logger = get_logger(func.__module__)
-        func_name = f"{func.__qualname__}"
-        
+        func_name = func.__qualname__
+
         start_time = time.time()
         try:
             result = func(*args, **kwargs)
@@ -112,5 +113,5 @@ def log_performance(func):
             execution_time = time.time() - start_time
             logger.error(f"{func_name} failed after {execution_time:.3f} seconds: {str(e)}")
             raise
-    
+
     return wrapper
