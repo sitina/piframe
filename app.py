@@ -110,50 +110,44 @@ class PiFrameApp:
     
     def get_fullscreen(self):
         """Render fullscreen template."""
-        return render_template('fullscreen.html', 
-                             refresh_interval=self.config.frontend_refresh_interval)
-    
+        return render_template('fullscreen.html',
+                               refresh_interval=self.config.frontend_refresh_interval)
+
+    def _get_weather_context(self):
+        """
+        Get weather context data for templates.
+
+        Returns:
+            tuple: (context_dict, error_response) - context_dict if successful, error_response if failed
+        """
+        weather_data = self.weather_service.get_current_weather()
+        if not weather_data:
+            return None, Response("Weather data unavailable", status=503, mimetype='text/plain')
+
+        forecast_data = self.weather_service.get_forecast()
+        forecast = self.weather_service.process_forecast_data(forecast_data) if forecast_data else []
+
+        context = {
+            'temperature': self.weather_service.to_celsius(weather_data['main']['temp']),
+            'feels_like': self.weather_service.to_celsius(weather_data['main']['feels_like']),
+            'weather_type': weather_data['weather'][0]['main'],
+            'forecast': forecast[:6]  # First 6 items
+        }
+        return context, None
+
     def get_weather(self):
         """Render weather template."""
-        weather_data = self.weather_service.get_current_weather()
-        if not weather_data:
-            return Response("Weather data unavailable", status=503, mimetype='text/plain')
-        
-        forecast_data = self.weather_service.get_forecast()
-        forecast = self.weather_service.process_forecast_data(forecast_data) if forecast_data else []
-        
-        temperature = self.weather_service.to_celsius(weather_data['main']['temp'])
-        feels_like = self.weather_service.to_celsius(weather_data['main']['feels_like'])
-        weather_type = weather_data['weather'][0]['main']
-        
-        return render_template(
-            'weather.html',
-            temperature=temperature,
-            feels_like=feels_like,
-            weather_type=weather_type,
-            forecast=forecast[:6]  # First 6 items
-        )
-    
+        context, error = self._get_weather_context()
+        if error:
+            return error
+        return render_template('weather.html', **context)
+
     def get_picture(self):
         """Render picture template with weather overlay."""
-        weather_data = self.weather_service.get_current_weather()
-        if not weather_data:
-            return Response("Weather data unavailable", status=503, mimetype='text/plain')
-        
-        forecast_data = self.weather_service.get_forecast()
-        forecast = self.weather_service.process_forecast_data(forecast_data) if forecast_data else []
-        
-        temperature = self.weather_service.to_celsius(weather_data['main']['temp'])
-        feels_like = self.weather_service.to_celsius(weather_data['main']['feels_like'])
-        weather_type = weather_data['weather'][0]['main']
-        
-        return render_template(
-            'picture.html',
-            temperature=temperature,
-            feels_like=feels_like,
-            weather_type=weather_type,
-            forecast=forecast[:6]  # First 6 items
-        )
+        context, error = self._get_weather_context()
+        if error:
+            return error
+        return render_template('picture.html', **context)
     
     def start_background_tasks(self, enabled: bool = True) -> None:
         """Start background tasks."""
