@@ -3,28 +3,77 @@ Image service for PiFrame application.
 Handles image serving, metadata extraction, and Flask responses.
 """
 
-import io
-import time
 import hashlib
-from typing import Optional, Dict, Any
+import io
+import itertools
+import time
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
 
 from flask import Response, send_file
 
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
-from ..utils.logging import LoggerMixin, log_performance
 from ..utils import metadata as image_metadata
+from ..utils.logging import LoggerMixin, log_performance
 from .drive_service import DriveService
+
+
+@dataclass
+class SynchronizedImageState:
+    """State for tracking the current synchronized image."""
+    image_id: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
+    timestamp: float = 0
+    image_hash: Optional[str] = None
+
+    def update(self, image_id: str, metadata: Optional[Dict[str, Any]],
+               image_hash: str) -> None:
+        """Update the synchronized state."""
+        self.image_id = image_id
+        self.metadata = metadata
+        self.timestamp = time.time()
+        self.image_hash = image_hash
+
+    def clear(self) -> None:
+        """Clear the synchronized state."""
+        self.image_id = None
+        self.metadata = None
+        self.timestamp = 0
+        self.image_hash = None
+
+    @property
+    def age(self) -> float:
+        """Get age of the synchronized state in seconds."""
+        if self.image_id is None:
+            return float('inf')
+        return time.time() - self.timestamp
+
+    def is_valid(self, timeout: float) -> bool:
+        """Check if the synchronized state is valid within timeout."""
+        return self.image_id is not None and self.age < timeout
+
+
+@dataclass
+class PreparedImage:
+    """Result of preparing an image for serving or metadata extraction."""
+    image_info: Dict[str, Any]
+    image_data: io.BytesIO
+    image_hash: str
+    metadata_info: Optional[Dict[str, Any]] = None
 
 
 class ImageService(LoggerMixin):
     """Service for image serving and metadata extraction."""
-    
+
+    # Thread-safe counter for correlation IDs
+    _correlation_counter = itertools.count()
+
     def __init__(self, config: Config, drive_service: DriveService,
                  cache_manager: Optional[CacheManager] = None):
         """
         Initialize image service.
-        
+
         Args:
             config: Application configuration
             drive_service: Google Drive service instance
@@ -33,16 +82,12 @@ class ImageService(LoggerMixin):
         self.config = config
         self.drive_service = drive_service
         self.cache_manager = cache_manager or get_cache_manager(config)
-        
+
         # Synchronized image state for metadata consistency
-        self._current_image_id = None
-        self._current_image_metadata = None
-        self._current_image_timestamp = 0
-        self._current_image_hash = None
-        
+        self._sync_state = SynchronizedImageState()
+
         # Synchronization settings
         self.SYNC_TIMEOUT_SECONDS = 60  # Extended from 5 to 60 seconds
-        self.CORRELATION_ID_COUNTER = 0
     
     def _generate_image_hash(self, image_data: io.BytesIO) -> str:
         """Generate SHA-256 hash of image data for verification."""
@@ -57,75 +102,109 @@ class ImageService(LoggerMixin):
     
     def _get_correlation_id(self) -> str:
         """Generate unique correlation ID for tracking sync operations."""
-        self.CORRELATION_ID_COUNTER += 1
-        return f"sync_{int(time.time())}_{self.CORRELATION_ID_COUNTER}"
-    
+        return f"sync_{int(time.time())}_{next(self._correlation_counter)}"
+
+    def _prepare_random_image(self, avoid_recent: bool = True,
+                              extract_metadata: bool = True,
+                              clear_cache: bool = False) -> tuple:
+        """
+        Prepare a random image for serving or metadata extraction.
+
+        Args:
+            avoid_recent: Avoid recently served images
+            extract_metadata: Whether to extract metadata
+            clear_cache: Clear download cache for selected image before downloading
+
+        Returns:
+            Tuple of (PreparedImage or None, error_type) where error_type is:
+            - None: success
+            - 'no_images': no images available
+            - 'download_failed': download failed
+        """
+        # Get random image info
+        image_info = self.drive_service.get_random_image(avoid_recent=avoid_recent)
+        if not image_info:
+            self.logger.error("No images available")
+            return None, 'no_images'
+
+        # Clear cache if requested (for force_new)
+        if clear_cache:
+            cache_key = f"download_{image_info['id']}"
+            self.cache_manager.delete('downloads', cache_key)
+            self.logger.debug(f"Cleared download cache for {image_info['id']}")
+
+        # Download image data
+        image_data = self.drive_service.download_file(image_info['id'])
+        if not image_data:
+            self.logger.error(f"Failed to download image {image_info['id']}")
+            return None, 'download_failed'
+
+        # Generate image hash for verification
+        image_hash = self._generate_image_hash(image_data)
+
+        # Extract metadata if requested
+        metadata_info = None
+        if extract_metadata:
+            metadata_info = self.get_image_metadata(
+                image_info['id'], image_data, file_info=image_info
+            )
+
+        return PreparedImage(
+            image_info=image_info,
+            image_data=image_data,
+            image_hash=image_hash,
+            metadata_info=metadata_info
+        ), None
+
     @log_performance
-    def serve_random_image(self, force_new: bool = False, 
-                         include_metadata: bool = False) -> Response:
+    def serve_random_image(self, force_new: bool = False,
+                           include_metadata: bool = False) -> Response:
         """
         Serve a random image with optional metadata.
-        
+
         Args:
             force_new: Force selection of a new image (bypass recently served)
             include_metadata: Include metadata in response headers
-            
+
         Returns:
             Flask Response with image data
         """
         try:
-            # Generate correlation ID for tracking
             correlation_id = self._get_correlation_id()
-            
-            # Get random image info
             self.logger.info(f"Selecting random image [correlation_id={correlation_id}]")
-            image_info = self.drive_service.get_random_image(avoid_recent=not force_new)
-            
-            if not image_info:
-                self.logger.error("No images available")
+
+            prepared, error = self._prepare_random_image(
+                avoid_recent=not force_new,
+                extract_metadata=include_metadata,
+                clear_cache=force_new
+            )
+
+            if error == 'no_images':
                 return Response("No images found", status=404, mimetype='text/plain')
-            
-            self.logger.info(f"Selected image: {image_info['name']} ({image_info['id']}) [correlation_id={correlation_id}]")
-            
-            # Clear cache if force_new
-            if force_new:
-                cache_key = f"download_{image_info['id']}"
-                self.cache_manager.delete('downloads', cache_key)
-                self.logger.debug(f"Cleared download cache for {image_info['id']}")
-            
-            # Download image data
-            image_data = self.drive_service.download_file(image_info['id'])
-            if not image_data:
-                self.logger.error(f"Failed to download image {image_info['id']}")
+            if error == 'download_failed':
                 return Response("Error downloading image", status=500, mimetype='text/plain')
-            
-            # Generate image hash for verification
-            image_hash = self._generate_image_hash(image_data)
-            
-            # Extract metadata if requested
-            metadata_info = None
-            if include_metadata:
-                self.logger.debug(f"Extracting image metadata [correlation_id={correlation_id}]")
-                metadata_info = self.get_image_metadata(image_info['id'], image_data, file_info=image_info)
-            
+
+            self.logger.info(f"Selected image: {prepared.image_info['name']} ({prepared.image_info['id']}) [correlation_id={correlation_id}]")
+
             # Create Flask response
-            response = self._create_image_response(image_info, image_data, metadata_info)
-            
+            response = self._create_image_response(
+                prepared.image_info, prepared.image_data, prepared.metadata_info
+            )
+
             # Add synchronization headers
             response.headers['X-Correlation-ID'] = correlation_id
-            response.headers['X-Image-Hash'] = image_hash
-            
+            response.headers['X-Image-Hash'] = prepared.image_hash
+
             # Update synchronized state
             if include_metadata:
-                self._current_image_id = image_info['id']
-                self._current_image_metadata = metadata_info
-                self._current_image_timestamp = time.time()
-                self._current_image_hash = image_hash
-                self.logger.info(f"Updated synchronized state [correlation_id={correlation_id}, image_id={image_info['id']}, hash={image_hash}]")
-            
-            self.logger.info(f"Successfully served image: {image_info['name']}")
+                self._sync_state.update(
+                    prepared.image_info['id'], prepared.metadata_info, prepared.image_hash
+                )
+                self.logger.info(f"Updated synchronized state [correlation_id={correlation_id}, image_id={prepared.image_info['id']}, hash={prepared.image_hash}]")
+
+            self.logger.info(f"Successfully served image: {prepared.image_info['name']}")
             return response
-            
+
         except Exception as e:
             self.logger.error(f"Error serving random image: {e}", exc_info=True)
             return Response("Internal server error", status=500, mimetype='text/plain')
@@ -175,28 +254,25 @@ class ImageService(LoggerMixin):
     def serve_synchronized_image(self) -> Response:
         """
         Serve the current synchronized image (for metadata consistency).
-        
+
         Returns:
             Flask Response with synchronized image data
         """
-        sync_age = time.time() - self._current_image_timestamp if self._current_image_id else float('inf')
-        
         # Check if we have a current synchronized image (within configured timeout)
-        if (self._current_image_id and sync_age < self.SYNC_TIMEOUT_SECONDS):
-            
-            self.logger.debug(f"Serving synchronized image: {self._current_image_id} (age: {sync_age:.1f}s)")
-            response = self.serve_image_by_id(self._current_image_id, include_metadata=False)
-            
+        if self._sync_state.is_valid(self.SYNC_TIMEOUT_SECONDS):
+            self.logger.debug(f"Serving synchronized image: {self._sync_state.image_id} (age: {self._sync_state.age:.1f}s)")
+            response = self.serve_image_by_id(self._sync_state.image_id, include_metadata=False)
+
             # Add synchronization verification headers
-            response.headers['X-Sync-Age'] = f"{sync_age:.1f}"
+            response.headers['X-Sync-Age'] = f"{self._sync_state.age:.1f}"
             response.headers['X-Sync-Status'] = 'synchronized'
-            if self._current_image_hash:
-                response.headers['X-Image-Hash'] = self._current_image_hash
-            
+            if self._sync_state.image_hash:
+                response.headers['X-Image-Hash'] = self._sync_state.image_hash
+
             return response
         else:
             # Fall back to random image
-            self.logger.debug(f"No synchronized image available (age: {sync_age:.1f}s), serving random")
+            self.logger.debug(f"No synchronized image available (age: {self._sync_state.age:.1f}s), serving random")
             response = self.serve_random_image(force_new=False, include_metadata=False)
             response.headers['X-Sync-Status'] = 'fallback'
             return response
@@ -204,61 +280,43 @@ class ImageService(LoggerMixin):
     def get_random_image_metadata(self) -> Dict[str, Any]:
         """
         Get metadata for a new random image.
-        
+
         Returns:
             Dictionary with image metadata
         """
         try:
-            # Process image for metadata without creating Flask response
             correlation_id = f"metadata_{int(time.time() * 1000000)}"
             self.logger.debug(f"Processing image for metadata [correlation_id={correlation_id}]")
-            
-            # Get random image info
-            image_info = self.drive_service.get_random_image()
-            if not image_info:
-                self.logger.error("No images available for metadata extraction")
+
+            prepared, error = self._prepare_random_image(avoid_recent=True, extract_metadata=True)
+            if error:
                 return self._get_default_metadata()
-            
-            # Download image data
-            image_data = self.drive_service.download_file(image_info['id'])
-            if not image_data:
-                self.logger.error(f"Failed to download image {image_info['id']} for metadata")
-                return self._get_default_metadata()
-            
-            # Generate image hash for verification
-            image_hash = self._generate_image_hash(image_data)
-            
-            # Extract metadata
-            self.logger.debug(f"Extracting image metadata [correlation_id={correlation_id}]")
-            metadata_info = self.get_image_metadata(image_info['id'], image_data, file_info=image_info)
-            
+
             # Update synchronized state for later image serving
-            self._current_image_id = image_info['id']
-            self._current_image_metadata = metadata_info
-            self._current_image_timestamp = time.time()
-            self._current_image_hash = image_hash
-            self.logger.info(f"Updated synchronized state for metadata [correlation_id={correlation_id}, image_id={image_info['id']}, hash={image_hash}]")
-            
+            self._sync_state.update(
+                prepared.image_info['id'], prepared.metadata_info, prepared.image_hash
+            )
+            self.logger.info(f"Updated synchronized state for metadata [correlation_id={correlation_id}, image_id={prepared.image_info['id']}, hash={prepared.image_hash}]")
+
             # Build metadata response
-            if metadata_info and metadata_info.get('display_info'):
-                display = metadata_info['display_info']
+            if prepared.metadata_info and prepared.metadata_info.get('display_info'):
+                display = prepared.metadata_info['display_info']
                 metadata = {
                     'creation_date': display.get('creation_date', 'Unknown'),
                     'creation_time': display.get('creation_time', 'Unknown'),
                     'camera_info': display.get('camera_info', 'Unknown'),
                     'dimensions': display.get('dimensions', 'Unknown'),
                     'picture_url': f'/random-picture/synchronized?t={int(time.time())}',
-                    'image_hash': self._current_image_hash,
-                    'sync_timestamp': self._current_image_timestamp,
-                    'image_id': self._current_image_id
+                    'image_hash': self._sync_state.image_hash,
+                    'sync_timestamp': self._sync_state.timestamp,
+                    'image_id': self._sync_state.image_id
                 }
-                
-                self.logger.debug(f"Extracted metadata for random image [image_id={self._current_image_id}, hash={self._current_image_hash}]")
+
+                self.logger.debug(f"Extracted metadata for random image [image_id={self._sync_state.image_id}, hash={self._sync_state.image_hash}]")
                 return metadata
             else:
-                # Return default metadata
                 return self._get_default_metadata()
-                
+
         except Exception as e:
             self.logger.error(f"Error getting random image metadata: {e}", exc_info=True)
             return self._get_default_metadata()
@@ -266,34 +324,32 @@ class ImageService(LoggerMixin):
     def get_synchronized_metadata(self) -> Dict[str, Any]:
         """
         Get metadata for current synchronized image without forcing new selection.
-        
+
         Returns:
             Dictionary with current synchronized image metadata
         """
-        sync_age = time.time() - self._current_image_timestamp if self._current_image_id else float('inf')
-        
-        if (self._current_image_id and sync_age < self.SYNC_TIMEOUT_SECONDS and 
-            self._current_image_metadata and self._current_image_metadata.get('display_info')):
-            
-            display = self._current_image_metadata['display_info']
+        if (self._sync_state.is_valid(self.SYNC_TIMEOUT_SECONDS) and
+                self._sync_state.metadata and self._sync_state.metadata.get('display_info')):
+
+            display = self._sync_state.metadata['display_info']
             metadata = {
                 'creation_date': display.get('creation_date', 'Unknown'),
                 'creation_time': display.get('creation_time', 'Unknown'),
                 'camera_info': display.get('camera_info', 'Unknown'),
                 'dimensions': display.get('dimensions', 'Unknown'),
                 'picture_url': f'/random-picture/synchronized?t={int(time.time())}',
-                'image_hash': self._current_image_hash,
-                'sync_timestamp': self._current_image_timestamp,
-                'image_id': self._current_image_id,
-                'sync_age': sync_age,
+                'image_hash': self._sync_state.image_hash,
+                'sync_timestamp': self._sync_state.timestamp,
+                'image_id': self._sync_state.image_id,
+                'sync_age': self._sync_state.age,
                 'is_synchronized': True
             }
-            
-            self.logger.debug(f"Returned synchronized metadata [image_id={self._current_image_id}, age={sync_age:.1f}s]")
+
+            self.logger.debug(f"Returned synchronized metadata [image_id={self._sync_state.image_id}, age={self._sync_state.age:.1f}s]")
             return metadata
         else:
             # No synchronized image available, fall back to getting new one
-            self.logger.debug(f"No synchronized metadata available (age: {sync_age:.1f}s), getting new image")
+            self.logger.debug(f"No synchronized metadata available (age: {self._sync_state.age:.1f}s), getting new image")
             return self.get_random_image_metadata()
     
     def get_image_metadata(self, file_id: str, image_data: io.BytesIO, 
@@ -431,12 +487,11 @@ class ImageService(LoggerMixin):
         stats = self.cache_manager.get_all_stats()
         return {
             'metadata_cache': stats.get('metadata', {}),
-            'synchronized_image_id': self._current_image_id,
-            'synchronized_age_seconds': time.time() - self._current_image_timestamp if self._current_image_id else None
+            'synchronized_image_id': self._sync_state.image_id,
+            'synchronized_age_seconds': self._sync_state.age if self._sync_state.image_id else None
         }
     
     def close(self) -> None:
         """Close the service and clean up resources."""
-        self._current_image_id = None
-        self._current_image_metadata = None
+        self._sync_state.clear()
         self.logger.info("Image service closed")

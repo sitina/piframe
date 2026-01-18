@@ -54,9 +54,9 @@ class TestImageService(unittest.TestCase):
         self.assertEqual(self.image_service.config, self.config)
         self.assertEqual(self.image_service.drive_service, self.mock_drive_service)
         self.assertEqual(self.image_service.cache_manager, self.mock_cache_manager)
-        self.assertIsNone(self.image_service._current_image_id)
-        self.assertIsNone(self.image_service._current_image_metadata)
-        self.assertEqual(self.image_service._current_image_timestamp, 0)
+        self.assertIsNone(self.image_service._sync_state.image_id)
+        self.assertIsNone(self.image_service._sync_state.metadata)
+        self.assertEqual(self.image_service._sync_state.timestamp, 0)
 
     @patch('piframe.services.image_service.send_file')
     def test_serve_random_image_success(self, mock_send_file):
@@ -162,7 +162,7 @@ class TestImageService(unittest.TestCase):
         # Check that metadata was cached
         self.mock_cache_manager.set.assert_called_once()
         # Check synchronized state was updated
-        self.assertEqual(self.image_service._current_image_id, 'test_id')
+        self.assertEqual(self.image_service._sync_state.image_id, 'test_id')
 
     @patch('piframe.services.image_service.send_file')
     def test_serve_random_image_force_new(self, mock_send_file):
@@ -241,8 +241,8 @@ class TestImageService(unittest.TestCase):
     def test_serve_synchronized_image_current(self):
         """Test serving synchronized image when current image exists."""
         # Set up synchronized state
-        self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_timestamp = time.time()
+        self.image_service._sync_state.image_id = 'test_id'
+        self.image_service._sync_state.timestamp = time.time()
         
         with patch.object(self.image_service, 'serve_image_by_id') as mock_serve:
             mock_response = MagicMock()
@@ -256,8 +256,8 @@ class TestImageService(unittest.TestCase):
     def test_serve_synchronized_image_expired(self):
         """Test serving synchronized image when current image is expired."""
         # Set up expired synchronized state (timeout is 60 seconds, so use 70 seconds ago)
-        self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_timestamp = time.time() - 70  # 70 seconds ago
+        self.image_service._sync_state.image_id = 'test_id'
+        self.image_service._sync_state.timestamp = time.time() - 70  # 70 seconds ago
         
         with patch.object(self.image_service, 'serve_random_image') as mock_serve:
             mock_response = MagicMock()
@@ -480,8 +480,8 @@ class TestImageService(unittest.TestCase):
         self.mock_cache_manager.get_all_stats.return_value = mock_stats
         
         # Set up synchronized state
-        self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_timestamp = time.time() - 5
+        self.image_service._sync_state.image_id = 'test_id'
+        self.image_service._sync_state.timestamp = time.time() - 5
         
         result = self.image_service.get_cache_stats()
         
@@ -501,13 +501,13 @@ class TestImageService(unittest.TestCase):
 
     def test_close(self):
         """Test service cleanup."""
-        self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_metadata = {'test': 'data'}
+        self.image_service._sync_state.image_id = 'test_id'
+        self.image_service._sync_state.metadata = {'test': 'data'}
         
         self.image_service.close()
         
-        self.assertIsNone(self.image_service._current_image_id)
-        self.assertIsNone(self.image_service._current_image_metadata)
+        self.assertIsNone(self.image_service._sync_state.image_id)
+        self.assertIsNone(self.image_service._sync_state.metadata)
 
     def test_serve_random_image_exception_handling(self):
         """Test exception handling in serve_random_image."""
@@ -532,10 +532,10 @@ class TestImageService(unittest.TestCase):
     def test_get_synchronized_metadata_current(self):
         """Test getting synchronized metadata when current image exists."""
         # Set up synchronized state
-        self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_timestamp = time.time() - 10  # 10 seconds ago
-        self.image_service._current_image_hash = 'test_hash'
-        self.image_service._current_image_metadata = {
+        self.image_service._sync_state.image_id = 'test_id'
+        self.image_service._sync_state.timestamp = time.time() - 10  # 10 seconds ago
+        self.image_service._sync_state.image_hash = 'test_hash'
+        self.image_service._sync_state.metadata = {
             'display_info': {
                 'creation_date': '25.12.2023',
                 'creation_time': '14:30:45',
@@ -554,8 +554,8 @@ class TestImageService(unittest.TestCase):
     def test_get_synchronized_metadata_expired(self):
         """Test getting synchronized metadata when current image is expired."""
         # Set up expired synchronized state (timeout is 60 seconds)
-        self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_timestamp = time.time() - 70  # 70 seconds ago
+        self.image_service._sync_state.image_id = 'test_id'
+        self.image_service._sync_state.timestamp = time.time() - 70  # 70 seconds ago
         
         with patch.object(self.image_service, 'get_random_image_metadata') as mock_get:
             mock_get.return_value = {
@@ -638,8 +638,8 @@ class TestImageService(unittest.TestCase):
         self.assertIn('X-Correlation-ID', mock_response.headers)
         self.assertIn('X-Image-Hash', mock_response.headers)
         # Check synchronized state was updated
-        self.assertEqual(self.image_service._current_image_id, 'test_id')
-        self.assertIsNotNone(self.image_service._current_image_hash)
+        self.assertEqual(self.image_service._sync_state.image_id, 'test_id')
+        self.assertIsNotNone(self.image_service._sync_state.image_hash)
 
     def test_get_image_metadata_with_file_info(self):
         """Test getting image metadata with provided file info."""
@@ -733,9 +733,9 @@ class TestImageService(unittest.TestCase):
 
     def test_serve_synchronized_image_with_hash_header(self):
         """Test that synchronized image includes hash in headers."""
-        self.image_service._current_image_id = 'test_id'
-        self.image_service._current_image_timestamp = time.time() - 10
-        self.image_service._current_image_hash = 'test_hash_12345'
+        self.image_service._sync_state.image_id = 'test_id'
+        self.image_service._sync_state.timestamp = time.time() - 10
+        self.image_service._sync_state.image_hash = 'test_hash_12345'
         
         mock_response = MagicMock()
         mock_response.headers = {}
