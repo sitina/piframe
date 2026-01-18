@@ -161,6 +161,67 @@ class DriveService(LoggerMixin):
 
         return self._fetch_images_with_retry(folder_id, cache_key, max_retries)
 
+    def _build_image_query(self, folder_id: str) -> str:
+        """Build Drive API query for image files in folder."""
+        mime_query = ' or '.join([f"mimeType='{mt}'" for mt in self.IMAGE_MIME_TYPES])
+        query_parts = [f"({mime_query})"]
+        if folder_id:
+            query_parts.append(f"'{folder_id}' in parents")
+        return ' and '.join(query_parts)
+
+    def _fetch_all_pages(self, query: str) -> List[Dict[str, Any]]:
+        """Fetch all pages of results from Drive API."""
+        all_items = []
+        page_token = None
+        page_count = 0
+        max_pages = 100  # Safety limit: max 100,000 files
+
+        while True:
+            page_count += 1
+            self.logger.debug(f"Fetching page {page_count} from Drive API")
+
+            request_params = {
+                'q': query,
+                'pageSize': 1000,
+                'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
+            }
+            if page_token:
+                request_params['pageToken'] = page_token
+
+            results = self.service.files().list(**request_params).execute()
+
+            page_items = results.get('files', [])
+            all_items.extend(page_items)
+
+            self.logger.debug(f"Page {page_count}: found {len(page_items)} items (total: {len(all_items)})")
+
+            page_token = results.get('nextPageToken')
+            if not page_token:
+                break
+
+            if page_count >= max_pages:
+                self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
+                break
+
+        return all_items
+
+    def _process_file_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Process raw API items into file info dictionaries."""
+        file_list = []
+        for item in items:
+            file_dict = {
+                'id': item['id'],
+                'name': item['name'],
+                'type': item['mimeType'],
+                'link': item['webViewLink']
+            }
+            if 'createdTime' in item:
+                file_dict['createdTime'] = item['createdTime']
+            if 'modifiedTime' in item:
+                file_dict['modifiedTime'] = item['modifiedTime']
+            file_list.append(file_dict)
+        return file_list
+
     def _fetch_images_with_retry(self, folder_id: str, cache_key: str,
                                   max_retries: int) -> List[Dict[str, Any]]:
         """Fetch images from Drive with retry logic for transient errors."""
@@ -170,74 +231,15 @@ class DriveService(LoggerMixin):
             try:
                 self.logger.info(f"Fetching image list from Drive folder: {folder_id} (attempt {attempt + 1}/{max_retries})")
 
-                # Build query for image files
-                mime_query = ' or '.join([f"mimeType='{mt}'" for mt in self.IMAGE_MIME_TYPES])
-                query_parts = [f"({mime_query})"]
-                if folder_id:
-                    query_parts.append(f"'{folder_id}' in parents")
-
-                query = ' and '.join(query_parts)
-
-                # Execute API calls with full pagination support
-                all_items = []
-                page_token = None
-                page_count = 0
-
-                while True:
-                    page_count += 1
-                    self.logger.debug(f"Fetching page {page_count} from Drive API")
-
-                    # Execute API call for current page
-                    request_params = {
-                        'q': query,
-                        'pageSize': 1000,  # Increased from 100 to 1000 for efficiency
-                        'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
-                    }
-                    if page_token:
-                        request_params['pageToken'] = page_token
-
-                    results = self.service.files().list(**request_params).execute()
-
-                    # Add items from current page
-                    page_items = results.get('files', [])
-                    all_items.extend(page_items)
-
-                    self.logger.debug(f"Page {page_count}: found {len(page_items)} items (total: {len(all_items)})")
-
-                    # Check if there are more pages
-                    page_token = results.get('nextPageToken')
-                    if not page_token:
-                        break
-
-                    # Safety check to prevent infinite loops
-                    if page_count > 100:  # Max 100,000 files (100 pages * 1000)
-                        self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
-                        break
-
-                items = all_items
+                query = self._build_image_query(folder_id)
+                items = self._fetch_all_pages(query)
 
                 if not items:
                     self.logger.warning(f"No images found in folder {folder_id}")
                     self.cache_manager.set('files', cache_key, [])
                     return []
 
-                # Process results
-                file_list = []
-                for item in items:
-                    file_dict = {
-                        'id': item['id'],
-                        'name': item['name'],
-                        'type': item['mimeType'],
-                        'link': item['webViewLink']
-                    }
-                    # Include created and modified times if available
-                    if 'createdTime' in item:
-                        file_dict['createdTime'] = item['createdTime']
-                    if 'modifiedTime' in item:
-                        file_dict['modifiedTime'] = item['modifiedTime']
-                    file_list.append(file_dict)
-
-                # Cache results
+                file_list = self._process_file_items(items)
                 self.cache_manager.set('files', cache_key, file_list)
 
                 self.logger.info(f"Found {len(file_list)} images in folder {folder_id}")
@@ -247,24 +249,19 @@ class DriveService(LoggerMixin):
                 error_msg = str(e)
                 self.logger.warning(f"List images attempt {attempt + 1} failed: {error_msg}")
 
-                # Determine retry and reset strategy
                 should_retry, should_reset = self._should_retry_download(error_msg)
 
-                # Reset service on SSL errors to force new connection
                 if should_reset:
                     self._reset_service()
 
-                # Handle retry logic
                 if should_retry and attempt < max_retries - 1:
                     self.logger.info(f"Retrying list images in {retry_delay} seconds...")
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 2
                     continue
 
-                # Final attempt failed or non-retryable error
                 self.logger.error(f"Error listing images from Drive: {e}", exc_info=True)
 
-                # Return cached data if available
                 cached_files = self.cache_manager.get('files', cache_key)
                 if cached_files is not None:
                     self.logger.info("Using expired cached file list as fallback")
@@ -272,106 +269,132 @@ class DriveService(LoggerMixin):
 
                 return []
 
-        # Should not reach here, but return empty list as fallback
         return []
     
+    def _get_cached_download(self, file_id: str, cache_key: str) -> Optional[io.BytesIO]:
+        """
+        Get cached download if available and valid.
+
+        Args:
+            file_id: Google Drive file ID
+            cache_key: Cache key for the download
+
+        Returns:
+            BytesIO object if cache hit, None otherwise
+        """
+        cached_data = self.cache_manager.get('downloads', cache_key)
+        if cached_data is None:
+            return None
+
+        self.logger.debug(f"Using cached download for file {file_id}")
+        try:
+            # Handle both old BytesIO objects and new raw bytes
+            if isinstance(cached_data, bytes):
+                fresh_copy = io.BytesIO(cached_data)
+                fresh_copy.seek(0)
+                self.logger.debug(f"Created fresh BytesIO from cached bytes for {file_id} ({len(cached_data)} bytes)")
+                return fresh_copy
+            elif hasattr(cached_data, 'read'):
+                if hasattr(cached_data, 'closed') and cached_data.closed:
+                    self.logger.warning(f"Cached BytesIO for {file_id} is closed, removing from cache")
+                    self.cache_manager.delete('downloads', cache_key)
+                else:
+                    cached_data.seek(0)
+                    fresh_copy = io.BytesIO(cached_data.read())
+                    fresh_copy.seek(0)
+                    self.logger.debug(f"Created fresh copy from cached BytesIO for {file_id}")
+                    return fresh_copy
+            else:
+                self.logger.warning(f"Invalid cached data format for {file_id}, removing from cache")
+                self.cache_manager.delete('downloads', cache_key)
+        except (ValueError, OSError, AttributeError) as e:
+            self.logger.warning(f"Cached download for {file_id} is invalid ({e}), removing from cache")
+            self.cache_manager.delete('downloads', cache_key)
+
+        return None
+
+    def _execute_download(self, file_id: str) -> io.BytesIO:
+        """
+        Execute the actual download from Google Drive.
+
+        Args:
+            file_id: Google Drive file ID
+
+        Returns:
+            BytesIO object containing file data
+
+        Raises:
+            ValueError: If downloaded file is empty
+            Exception: On API errors
+        """
+        request = self.service.files().get_media(fileId=file_id)
+        file_buffer = io.BytesIO()
+        downloader = MediaIoBaseDownload(file_buffer, request)
+
+        done = False
+        while not done:
+            status, done = downloader.next_chunk()
+            if status:
+                progress = int(status.progress() * 100)
+                if progress % 25 == 0:
+                    self.logger.debug(f"Download progress: {progress}%")
+
+        file_buffer.seek(0)
+        if file_buffer.getbuffer().nbytes == 0:
+            raise ValueError("Downloaded file is empty")
+
+        return file_buffer
+
     @log_performance
     def download_file(self, file_id: str, max_retries: int = 3) -> Optional[io.BytesIO]:
         """
         Download a file from Google Drive with caching and retry logic.
-        
+
         Args:
             file_id: Google Drive file ID
             max_retries: Maximum number of retry attempts
-            
+
         Returns:
             BytesIO object containing file data or None if failed
         """
         cache_key = f"download_{file_id}"
-        
+
         # Check cache first
-        cached_data = self.cache_manager.get('downloads', cache_key)
-        if cached_data is not None:
-            self.logger.debug(f"Using cached download for file {file_id}")
-            try:
-                # Handle both old BytesIO objects and new raw bytes
-                if isinstance(cached_data, bytes):
-                    # New format: raw bytes - create fresh BytesIO
-                    fresh_copy = io.BytesIO(cached_data)
-                    fresh_copy.seek(0)
-                    self.logger.debug(f"Created fresh BytesIO from cached bytes for {file_id} ({len(cached_data)} bytes)")
-                    return fresh_copy
-                elif hasattr(cached_data, 'read'):
-                    # Old format: BytesIO object - check validity and create copy
-                    if hasattr(cached_data, 'closed') and cached_data.closed:
-                        self.logger.warning(f"Cached BytesIO for {file_id} is closed, removing from cache")
-                        self.cache_manager.delete('downloads', cache_key)
-                    else:
-                        # Create a fresh BytesIO copy to avoid shared state issues
-                        cached_data.seek(0)
-                        fresh_copy = io.BytesIO(cached_data.read())
-                        fresh_copy.seek(0)
-                        self.logger.debug(f"Created fresh copy from cached BytesIO for {file_id}")
-                        return fresh_copy
-                else:
-                    # Invalid cache format
-                    self.logger.warning(f"Invalid cached data format for {file_id}, removing from cache")
-                    self.cache_manager.delete('downloads', cache_key)
-            except (ValueError, OSError, AttributeError) as e:
-                self.logger.warning(f"Cached download for {file_id} is invalid ({e}), removing from cache")
-                self.cache_manager.delete('downloads', cache_key)
-        
+        cached = self._get_cached_download(file_id, cache_key)
+        if cached is not None:
+            return cached
+
         retry_delay = 1
-        
+
         for attempt in range(max_retries):
             try:
                 self.logger.info(f"Downloading file {file_id} (attempt {attempt + 1}/{max_retries})")
-                
-                request = self.service.files().get_media(fileId=file_id)
-                file_buffer = io.BytesIO()
-                downloader = MediaIoBaseDownload(file_buffer, request)
-                
-                done = False
-                while not done:
-                    status, done = downloader.next_chunk()
-                    if status:
-                        progress = int(status.progress() * 100)
-                        if progress % 25 == 0:  # Log every 25%
-                            self.logger.debug(f"Download progress: {progress}%")
-                
-                # Verify download
-                file_buffer.seek(0)
-                if file_buffer.getbuffer().nbytes == 0:
-                    raise ValueError("Downloaded file is empty")
-                
-                # Cache the result
+
+                file_buffer = self._execute_download(file_id)
+
                 self._cache_download(file_id, file_buffer)
-                
+
                 self.logger.info(f"Successfully downloaded file {file_id}")
                 file_buffer.seek(0)
                 return file_buffer
-                
+
             except Exception as e:
                 error_msg = str(e)
                 self.logger.warning(f"Download attempt {attempt + 1} failed: {error_msg}")
 
-                # Determine retry and reset strategy
                 should_retry, should_reset = self._should_retry_download(error_msg)
 
-                # Reset service on SSL errors to force new connection
                 if should_reset:
                     self._reset_service()
 
-                # Handle retry logic
                 if should_retry and attempt < max_retries - 1:
                     self.logger.info(f"Retrying download in {retry_delay} seconds...")
                     time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                    retry_delay *= 2
                     continue
 
-                # Don't retry for non-retryable errors
                 break
-        
+
         self.logger.error(f"Failed to download file {file_id} after {max_retries} attempts")
         return None
     

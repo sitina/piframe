@@ -343,9 +343,9 @@ class TestDriveService(unittest.TestCase):
         
         result = self.drive_service.list_images_in_folder()
         
-        # Should stop at safety limit (100 pages, but counts to 101 before breaking)
-        self.assertEqual(len(result), 101)  # 101 pages * 1 file per page
-        self.assertEqual(mock_list_call().execute.call_count, 101)
+        # Should stop at safety limit (100 pages)
+        self.assertEqual(len(result), 100)  # 100 pages * 1 file per page
+        self.assertEqual(mock_list_call().execute.call_count, 100)
 
     @patch('piframe.services.drive_service.build')
     def test_list_images_in_folder_pagination_empty_pages(self, mock_build):
