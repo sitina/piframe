@@ -9,7 +9,7 @@ from typing import Optional, List, Callable
 from dataclasses import dataclass
 
 from ..config.settings import Config
-from ..utils.logging import LoggerMixin
+from ..utils.logging import LoggerMixin, get_logger
 
 
 @dataclass
@@ -245,83 +245,83 @@ class BackgroundTaskManager(LoggerMixin):
         self.stop_all()
 
 
+class ImagePreloader:
+    """
+    Callable that refreshes the Drive file list and preloads random images
+    into the download cache so they're ready to serve instantly.
+
+    Periodically clears the download cache to ensure image variety.
+    """
+
+    # Clear the download cache every N calls to rotate cached images
+    CACHE_CLEAR_EVERY_N_CALLS = 5
+    # Number of random images to preload per invocation
+    IMAGES_TO_PRELOAD = 2
+
+    def __init__(self, drive_service):
+        self.drive_service = drive_service
+        self.call_count = 0
+        self._logger = get_logger(__name__)
+
+    def __call__(self):
+        self.drive_service.force_refresh_file_list()
+
+        self.call_count += 1
+        if self.call_count % self.CACHE_CLEAR_EVERY_N_CALLS == 0:
+            self.drive_service.clear_download_cache()
+
+        for i in range(self.IMAGES_TO_PRELOAD):
+            try:
+                image_info = self.drive_service.get_random_image(avoid_recent=False)
+                if image_info:
+                    self.drive_service.download_file(image_info['id'])
+            except Exception as e:
+                self._logger.warning(f"Failed to preload image {i+1}/{self.IMAGES_TO_PRELOAD}: {e}")
+
+
+# Cache cleanup interval constants (seconds)
+CACHE_CLEANUP_INTERVAL = 1800   # 30 minutes
+CACHE_CLEANUP_ERROR_INTERVAL = 300  # 5 minutes
+
+
 def create_standard_tasks(weather_service, drive_service, image_service, config) -> BackgroundTaskManager:
     """
     Create a task manager with standard PiFrame background tasks.
-    
+
     Args:
         weather_service: Weather service instance
-        drive_service: Drive service instance  
+        drive_service: Drive service instance
         image_service: Image service instance
         config: Application configuration
-        
+
     Returns:
         Configured BackgroundTaskManager
     """
     task_manager = BackgroundTaskManager(config)
-    
-    # Weather data refresh task
+
     def refresh_weather():
         weather_service.get_current_weather(force_refresh=True)
         weather_service.get_forecast(force_refresh=True)
-    
+
     task_manager.add_task(
         name="weather_refresh",
         function=refresh_weather,
         interval=config.background_refresh_interval,
         error_interval=config.error_retry_interval
     )
-    
-    # Image preloading task with call counter
-    class ImagePreloader:
-        """Callable class for image preloading with call count tracking."""
 
-        def __init__(self, drive_service):
-            self.drive_service = drive_service
-            self.call_count = 0
-
-        def __call__(self):
-            # Refresh file list
-            self.drive_service.force_refresh_file_list()
-
-            # Clear download cache occasionally for variety
-            self.call_count += 1
-
-            # Clear cache every 5 calls (roughly every hour with default 15min interval)
-            if self.call_count % 5 == 0:
-                self.drive_service.clear_download_cache()
-
-            # Preload a couple random images
-            for i in range(2):
-                try:
-                    image_info = self.drive_service.get_random_image(avoid_recent=False)
-                    if image_info:
-                        self.drive_service.download_file(image_info['id'])
-                except Exception as e:
-                    # Log preload errors but don't let them stop the task
-                    from ..utils.logging import get_logger
-                    logger = get_logger(__name__)
-                    logger.warning(f"Failed to preload image {i+1}/2: {e}")
-
-    preload_images = ImagePreloader(drive_service)
-    
     task_manager.add_task(
         name="image_preload",
-        function=preload_images,
+        function=ImagePreloader(drive_service),
         interval=config.preload_interval,
         error_interval=config.preload_error_retry_interval
     )
-    
-    # Cache cleanup task
-    def cleanup_caches():
-        weather_service.cleanup_expired_cache()
-        # Could add more cleanup tasks here
-    
+
     task_manager.add_task(
         name="cache_cleanup",
-        function=cleanup_caches,
-        interval=1800,  # 30 minutes
-        error_interval=300  # 5 minutes
+        function=weather_service.cleanup_expired_cache,
+        interval=CACHE_CLEANUP_INTERVAL,
+        error_interval=CACHE_CLEANUP_ERROR_INTERVAL,
     )
-    
+
     return task_manager

@@ -93,25 +93,39 @@ class LoggerMixin:
         return get_logger(f"{self.__class__.__module__}.{self.__class__.__name__}")
 
 
-def log_performance(func):
+def log_performance(func=None, *, slow_threshold: float = 1.0):
     """
     Decorator to log function execution time.
-    Useful for monitoring performance of slow operations.
+
+    Operations completing within *slow_threshold* seconds are logged at DEBUG;
+    those exceeding it are logged at WARNING so they stand out.
+
+    Can be used bare (@log_performance) or with arguments
+    (@log_performance(slow_threshold=2.0)).
     """
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        logger = get_logger(func.__module__)
-        func_name = func.__qualname__
+    def decorator(fn):
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            logger = get_logger(fn.__module__)
+            func_name = fn.__qualname__
 
-        start_time = time.time()
-        try:
-            result = func(*args, **kwargs)
-            execution_time = time.time() - start_time
-            logger.info(f"{func_name} executed in {execution_time:.3f} seconds")
-            return result
-        except Exception as e:
-            execution_time = time.time() - start_time
-            logger.error(f"{func_name} failed after {execution_time:.3f} seconds: {str(e)}")
-            raise
+            start_time = time.time()
+            try:
+                result = fn(*args, **kwargs)
+                execution_time = time.time() - start_time
+                if execution_time > slow_threshold:
+                    logger.warning(f"{func_name} slow: {execution_time:.3f}s")
+                else:
+                    logger.debug(f"{func_name} executed in {execution_time:.3f}s")
+                return result
+            except Exception as e:
+                execution_time = time.time() - start_time
+                logger.error(f"{func_name} failed after {execution_time:.3f}s: {e}")
+                raise
 
-    return wrapper
+        return wrapper
+
+    # Support both @log_performance and @log_performance(slow_threshold=2.0)
+    if func is not None:
+        return decorator(func)
+    return decorator

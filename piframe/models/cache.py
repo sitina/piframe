@@ -169,7 +169,7 @@ class TTLCache:
                 'valid_entries': total_entries - expired_entries,
                 'max_size': self.max_size,
                 'total_accesses': total_access_count,
-                'memory_usage_approx': len(self._cache) * 100  # rough estimate
+                'entry_count': len(self._cache)
             }
 
 
