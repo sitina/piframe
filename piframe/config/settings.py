@@ -4,6 +4,7 @@ Handles loading, validation, and access to all application settings.
 """
 
 import json
+import logging
 import os
 import secrets
 from typing import Optional, Dict, Any
@@ -74,11 +75,9 @@ class Config:
                     data = json.load(f)
                     config._update_from_dict(data)
             except (json.JSONDecodeError, FileNotFoundError) as e:
-                import logging
                 logging.warning(f"Error loading config from {config_path}: {e}")
                 logging.info("Using default configuration")
         else:
-            import logging
             logging.info(f"Config file {config_path} not found, creating with defaults")
             config.save()
         
@@ -93,21 +92,17 @@ class Config:
     
     def _update_from_dict(self, data: Dict[str, Any]) -> None:
         """Update configuration from dictionary, handling legacy key names."""
-        # Handle legacy key mappings
-        key_mappings = {
+        # Only legacy keys that differ from current attribute names need mapping
+        legacy_key_mappings = {
             'album': 'album_id',
-            'background_refresh_interval': 'background_refresh_interval',
-            'error_retry_interval': 'error_retry_interval',
-            'frontend_refresh_interval': 'frontend_refresh_interval',
-            'preload_interval': 'preload_interval',
-            'preload_error_retry_interval': 'preload_error_retry_interval'
         }
-        
+
         for key, value in data.items():
-            # Use mapped key name if available, otherwise use original
-            attr_name = key_mappings.get(key, key)
+            attr_name = legacy_key_mappings.get(key, key)
             if hasattr(self, attr_name):
                 setattr(self, attr_name, value)
+            else:
+                logging.warning(f"Unknown config key ignored: {key}")
     
     def _load_from_env(self) -> None:
         """Load configuration from environment variables."""
@@ -130,7 +125,6 @@ class Config:
                     try:
                         setattr(self, attr_name, converter(value))
                     except (ValueError, TypeError):
-                        import logging
                         logging.warning(f"Invalid value for {env_var}: {value}")
                 else:
                     setattr(self, attr_info, value)
@@ -153,10 +147,8 @@ class Config:
         try:
             with open(config_path, 'w', encoding='utf-8') as f:
                 json.dump(config_dict, f, indent=2)
-            import logging
             logging.info(f"Configuration saved to {config_path}")
         except IOError as e:
-            import logging
             logging.error(f"Error saving configuration: {e}")
     
     def validate(self, fail_fast: bool = False) -> bool:
@@ -173,7 +165,6 @@ class Config:
             ValueError: If fail_fast=True and critical configuration is missing
         """
         is_valid = True
-        import logging
         
         # Critical configuration checks
         if not self.album_id:

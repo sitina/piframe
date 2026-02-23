@@ -20,6 +20,9 @@ from piframe.background.tasks import create_standard_tasks
 
 class PiFrameApp:
     """Main PiFrame application class."""
+
+    # Number of forecast time-slots to show in the weather overlay
+    FORECAST_DISPLAY_SLOTS = 6
     
     def __init__(self, config: Config):
         """Initialize the application with configuration."""
@@ -131,7 +134,7 @@ class PiFrameApp:
             'temperature': self.weather_service.to_celsius(weather_data['main']['temp']),
             'feels_like': self.weather_service.to_celsius(weather_data['main']['feels_like']),
             'weather_type': weather_data['weather'][0]['main'],
-            'forecast': forecast[:6]  # First 6 items
+            'forecast': forecast[:self.FORECAST_DISPLAY_SLOTS]
         }
         return context, None
 
@@ -225,10 +228,10 @@ def main():
         config = Config.load(args.config)
         config.validate()
     except Exception as e:
-        # Use basic logging since logger may not be set up yet
-        import logging
-        logging.basicConfig(level=logging.ERROR)
-        logging.error(f"Configuration error: {e}")
+        # Logger may not be set up yet, fall back to basic logging
+        import logging as _logging
+        _logging.basicConfig(level=_logging.ERROR)
+        _logging.error(f"Configuration error: {e}")
         return 1
     
     # Setup logging

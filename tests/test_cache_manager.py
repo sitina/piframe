@@ -210,7 +210,7 @@ class TestTTLCache(unittest.TestCase):
         self.assertEqual(stats['valid_entries'], 1)
         self.assertEqual(stats['max_size'], 3)
         self.assertGreater(stats['total_accesses'], 0)
-        self.assertIsInstance(stats['memory_usage_approx'], int)
+        self.assertIsInstance(stats['entry_count'], int)
 
     def test_thread_safety(self):
         """Test thread safety of cache operations."""

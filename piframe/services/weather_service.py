@@ -10,6 +10,9 @@ import time
 from typing import Optional, Dict, Any, List
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 import matplotlib
 matplotlib.use('Agg')  # Non-interactive backend
 import matplotlib.pyplot as plt
@@ -44,10 +47,6 @@ class WeatherService(LoggerMixin):
             self._session.headers.update({
                 'User-Agent': 'PiFrame/0.2.0'
             })
-            # Configure session timeouts and retries
-            from requests.adapters import HTTPAdapter
-            from urllib3.util.retry import Retry
-            
             retry_strategy = Retry(
                 total=3,
                 backoff_factor=1,
@@ -296,9 +295,11 @@ class WeatherService(LoggerMixin):
         if not forecast:
             return fig
         
-        # Extract data for plotting
-        xs = [f['dt'][:13][8:] for f in forecast]  # Day-hour format
-        xticks = [f['dt'][:13][11:] for f in forecast]  # Hour labels
+        # dt format is "YYYY-MM-DD HH:MM:SS"
+        # Extract "DD HH" as x-axis positions (unique per 3h interval)
+        # Extract "HH" as human-readable tick labels
+        xs = [f['dt'][8:13] for f in forecast]        # "DD HH" e.g. "25 14"
+        xticks = [f['dt'][11:13] for f in forecast]   # "HH"    e.g. "14"
         temps = [f['temp'] for f in forecast]
         feels_like_temps = [f['feels_like'] for f in forecast]
         
@@ -312,9 +313,9 @@ class WeatherService(LoggerMixin):
         axis.set_xticklabels(xticks[::2], fontsize=8)
         axis.tick_params(axis='x', rotation=45)
         
-        # Add day separator lines
-        for i, val in enumerate(xs):
-            if val[3:] == '00':  # Midnight
+        # Add vertical lines at midnight boundaries ("DD 00")
+        for val in xs:
+            if val[3:] == '00':
                 axis.axvline(x=val, color='black', alpha=0.3, linewidth=0.5)
         
         return fig

@@ -3,6 +3,7 @@ Image service for PiFrame application.
 Handles image serving, metadata extraction, and Flask responses.
 """
 
+import enum
 import hashlib
 import io
 import itertools
@@ -17,6 +18,12 @@ from ..models.cache import CacheManager, get_cache_manager
 from ..utils import metadata as image_metadata
 from ..utils.logging import LoggerMixin, log_performance
 from .drive_service import DriveService
+
+
+class ImagePrepareError(enum.Enum):
+    """Why preparing a random image failed."""
+    NO_IMAGES = "no_images"
+    DOWNLOAD_FAILED = "download_failed"
 
 
 @dataclass
@@ -86,8 +93,8 @@ class ImageService(LoggerMixin):
         # Synchronized image state for metadata consistency
         self._sync_state = SynchronizedImageState()
 
-        # Synchronization settings
-        self.SYNC_TIMEOUT_SECONDS = 60  # Extended from 5 to 60 seconds
+        # How long a synchronized image stays valid before we pick a new one
+        self.SYNC_TIMEOUT_SECONDS = 60
     
     def _generate_image_hash(self, image_data: io.BytesIO) -> str:
         """Generate SHA-256 hash of image data for verification."""
@@ -106,7 +113,8 @@ class ImageService(LoggerMixin):
 
     def _prepare_random_image(self, avoid_recent: bool = True,
                               extract_metadata: bool = True,
-                              clear_cache: bool = False) -> tuple:
+                              clear_cache: bool = False
+                              ) -> tuple[Optional['PreparedImage'], Optional[ImagePrepareError]]:
         """
         Prepare a random image for serving or metadata extraction.
 
@@ -116,28 +124,22 @@ class ImageService(LoggerMixin):
             clear_cache: Clear download cache for selected image before downloading
 
         Returns:
-            Tuple of (PreparedImage or None, error_type) where error_type is:
-            - None: success
-            - 'no_images': no images available
-            - 'download_failed': download failed
+            (PreparedImage, None) on success, or (None, ImagePrepareError) on failure.
         """
-        # Get random image info
         image_info = self.drive_service.get_random_image(avoid_recent=avoid_recent)
         if not image_info:
             self.logger.error("No images available")
-            return None, 'no_images'
+            return None, ImagePrepareError.NO_IMAGES
 
-        # Clear cache if requested (for force_new)
         if clear_cache:
             cache_key = f"download_{image_info['id']}"
             self.cache_manager.delete('downloads', cache_key)
             self.logger.debug(f"Cleared download cache for {image_info['id']}")
 
-        # Download image data
         image_data = self.drive_service.download_file(image_info['id'])
         if not image_data:
             self.logger.error(f"Failed to download image {image_info['id']}")
-            return None, 'download_failed'
+            return None, ImagePrepareError.DOWNLOAD_FAILED
 
         # Generate image hash for verification
         image_hash = self._generate_image_hash(image_data)
@@ -179,9 +181,9 @@ class ImageService(LoggerMixin):
                 clear_cache=force_new
             )
 
-            if error == 'no_images':
+            if error is ImagePrepareError.NO_IMAGES:
                 return Response("No images found", status=404, mimetype='text/plain')
-            if error == 'download_failed':
+            if error is ImagePrepareError.DOWNLOAD_FAILED:
                 return Response("Error downloading image", status=500, mimetype='text/plain')
 
             self.logger.info(f"Selected image: {prepared.image_info['name']} ({prepared.image_info['id']}) [correlation_id={correlation_id}]")
@@ -301,19 +303,8 @@ class ImageService(LoggerMixin):
             # Build metadata response
             if prepared.metadata_info and prepared.metadata_info.get('display_info'):
                 display = prepared.metadata_info['display_info']
-                metadata = {
-                    'creation_date': display.get('creation_date', 'Unknown'),
-                    'creation_time': display.get('creation_time', 'Unknown'),
-                    'camera_info': display.get('camera_info', 'Unknown'),
-                    'dimensions': display.get('dimensions', 'Unknown'),
-                    'picture_url': f'/random-picture/synchronized?t={int(time.time())}',
-                    'image_hash': self._sync_state.image_hash,
-                    'sync_timestamp': self._sync_state.timestamp,
-                    'image_id': self._sync_state.image_id
-                }
-
                 self.logger.debug(f"Extracted metadata for random image [image_id={self._sync_state.image_id}, hash={self._sync_state.image_hash}]")
-                return metadata
+                return self._build_metadata_response(display, self._sync_state)
             else:
                 return self._get_default_metadata()
 
@@ -332,21 +323,12 @@ class ImageService(LoggerMixin):
                 self._sync_state.metadata and self._sync_state.metadata.get('display_info')):
 
             display = self._sync_state.metadata['display_info']
-            metadata = {
-                'creation_date': display.get('creation_date', 'Unknown'),
-                'creation_time': display.get('creation_time', 'Unknown'),
-                'camera_info': display.get('camera_info', 'Unknown'),
-                'dimensions': display.get('dimensions', 'Unknown'),
-                'picture_url': f'/random-picture/synchronized?t={int(time.time())}',
-                'image_hash': self._sync_state.image_hash,
-                'sync_timestamp': self._sync_state.timestamp,
-                'image_id': self._sync_state.image_id,
-                'sync_age': self._sync_state.age,
-                'is_synchronized': True
-            }
-
             self.logger.debug(f"Returned synchronized metadata [image_id={self._sync_state.image_id}, age={self._sync_state.age:.1f}s]")
-            return metadata
+            return self._build_metadata_response(
+                display, self._sync_state,
+                sync_age=self._sync_state.age,
+                is_synchronized=True,
+            )
         else:
             # No synchronized image available, fall back to getting new one
             self.logger.debug(f"No synchronized metadata available (age: {self._sync_state.age:.1f}s), getting new image")
@@ -454,6 +436,23 @@ class ImageService(LoggerMixin):
         
         return response
     
+    def _build_metadata_response(self, display: Dict[str, str],
+                                 sync_state: SynchronizedImageState,
+                                 **extra_fields) -> Dict[str, Any]:
+        """Build a metadata response dict from display info and sync state."""
+        metadata = {
+            'creation_date': display.get('creation_date', 'Unknown'),
+            'creation_time': display.get('creation_time', 'Unknown'),
+            'camera_info': display.get('camera_info', 'Unknown'),
+            'dimensions': display.get('dimensions', 'Unknown'),
+            'picture_url': f'/random-picture/synchronized?t={int(time.time())}',
+            'image_hash': sync_state.image_hash,
+            'sync_timestamp': sync_state.timestamp,
+            'image_id': sync_state.image_id,
+        }
+        metadata.update(extra_fields)
+        return metadata
+
     def _get_default_metadata(self) -> Dict[str, Any]:
         """Get default metadata structure."""
         return {

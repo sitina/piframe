@@ -9,7 +9,7 @@ import pickle
 import random
 import threading
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -36,6 +36,14 @@ class DriveService(LoggerMixin):
         'image/bmp',
         'image/webp'
     ]
+
+    # Pagination limits for Drive API listing
+    PAGE_SIZE = 1000
+    MAX_PAGES = 100  # Safety limit: PAGE_SIZE * MAX_PAGES = 100,000 files max
+
+    # Recently-served tracking: prevents the same image from appearing
+    # back-to-back. Capped at half the album size to avoid starving selection.
+    MAX_RECENT_SERVED = 3
     
     def __init__(self, config: Config, cache_manager: Optional[CacheManager] = None):
         """
@@ -174,7 +182,6 @@ class DriveService(LoggerMixin):
         all_items = []
         page_token = None
         page_count = 0
-        max_pages = 100  # Safety limit: max 100,000 files
 
         while True:
             page_count += 1
@@ -182,7 +189,7 @@ class DriveService(LoggerMixin):
 
             request_params = {
                 'q': query,
-                'pageSize': 1000,
+                'pageSize': self.PAGE_SIZE,
                 'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
             }
             if page_token:
@@ -199,7 +206,7 @@ class DriveService(LoggerMixin):
             if not page_token:
                 break
 
-            if page_count >= max_pages:
+            if page_count >= self.MAX_PAGES:
                 self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
                 break
 
@@ -403,12 +410,13 @@ class DriveService(LoggerMixin):
         self._service = None
         self.logger.info("Drive service reset - will create new connection on next request")
 
-    def _should_retry_download(self, error_msg: str) -> tuple:
+    def _should_retry_download(self, error_msg: str) -> Tuple[bool, bool]:
         """
         Determine if a download error should trigger a retry and/or service reset.
 
         Returns:
-            Tuple of (should_retry, should_reset_service)
+            (should_retry, should_reset_service) based on error message keywords.
+            Network/timeout errors trigger retry; SSL errors also trigger service reset.
         """
         retry_keywords = ['timeout', 'connection', 'network', 'reset', 'broken pipe']
         ssl_keywords = ['ssl', 'handshake', 'certificate', 'record layer']
@@ -449,29 +457,23 @@ class DriveService(LoggerMixin):
             return None
         
         with self._recently_served_lock:
-            available_files = files.copy()
-            
-            # Remove recently served files if requested
+            available_files = files
+
             if avoid_recent and self._recently_served:
-                available_files = [
-                    f for f in available_files 
-                    if f['id'] not in self._recently_served
-                ]
-                
-                # If we've served all images recently, reset the list
+                recently_served_ids = set(self._recently_served)
+                available_files = [f for f in files if f['id'] not in recently_served_ids]
+
                 if not available_files:
-                    available_files = files.copy()
+                    # Every image has been served recently -- reset and allow all
+                    available_files = files
                     self._recently_served.clear()
                     self.logger.debug("Reset recently served list - all images served")
-            
-            # Select random file
+
             random_file = random.choice(available_files)
-            
-            # Track recently served
             self._recently_served.append(random_file['id'])
-            
-            # Keep only last few served files
-            max_recent = min(3, len(files) // 2)  # Don't block more than half the images
+
+            # Cap the history so we never block more than half the album
+            max_recent = min(self.MAX_RECENT_SERVED, len(files) // 2)
             if len(self._recently_served) > max_recent:
                 self._recently_served = self._recently_served[-max_recent:]
         
