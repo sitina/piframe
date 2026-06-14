@@ -166,11 +166,12 @@ class TestIntegration(unittest.TestCase):
         self.assertEqual(response.status_code, 503)
 
     def test_error_handling_picture_weather_unavailable(self):
-        """Test error handling in picture route when weather is unavailable"""
+        """Test picture route renders when optional weather is unavailable."""
         self.piframe_app.weather_service.get_current_weather.return_value = None
 
         response = self.client.get('/picture')
-        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Random photo', response.data)
 
 
 class TestConfigIntegration(unittest.TestCase):

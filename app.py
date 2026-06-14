@@ -4,6 +4,7 @@ Clean separation of concerns using service architecture.
 """
 
 import argparse
+import os
 import signal
 import sys
 from typing import Optional
@@ -110,47 +111,121 @@ class PiFrameApp:
                 return Response(chart_data, mimetype='image/png')
             else:
                 return Response("Chart generation failed", status=500, mimetype='text/plain')
+
+        @self.app.route("/status")
+        def status():
+            """Local status endpoint for setup and runtime diagnostics."""
+            return jsonify(self.get_status())
     
     def get_fullscreen(self):
         """Render fullscreen template."""
         return render_template('fullscreen.html',
                                refresh_interval=self.config.frontend_refresh_interval)
 
-    def _get_weather_context(self):
+    def _empty_weather_context(self):
+        """Return a weather context that lets the photo frame render without weather."""
+        return {
+            'weather_available': False,
+            'temperature': None,
+            'feels_like': None,
+            'weather_type': 'Unavailable',
+            'forecast': []
+        }
+
+    def _get_weather_context(self, require_weather: bool = True):
         """
         Get weather context data for templates.
+
+        Args:
+            require_weather: If True, return an error when weather is unavailable.
+                If False, return an empty weather context so photos can still render.
 
         Returns:
             tuple: (context_dict, error_response) - context_dict if successful, error_response if failed
         """
         weather_data = self.weather_service.get_current_weather()
         if not weather_data:
+            if not require_weather:
+                return self._empty_weather_context(), None
             return None, Response("Weather data unavailable", status=503, mimetype='text/plain')
 
         forecast_data = self.weather_service.get_forecast()
         forecast = self.weather_service.process_forecast_data(forecast_data) if forecast_data else []
 
-        context = {
-            'temperature': self.weather_service.to_celsius(weather_data['main']['temp']),
-            'feels_like': self.weather_service.to_celsius(weather_data['main']['feels_like']),
-            'weather_type': weather_data['weather'][0]['main'],
-            'forecast': forecast[:self.FORECAST_DISPLAY_SLOTS]
-        }
+        try:
+            context = {
+                'weather_available': True,
+                'temperature': self.weather_service.to_celsius(weather_data['main']['temp']),
+                'feels_like': self.weather_service.to_celsius(weather_data['main']['feels_like']),
+                'weather_type': weather_data['weather'][0]['main'],
+                'forecast': forecast[:self.FORECAST_DISPLAY_SLOTS]
+            }
+        except (KeyError, IndexError, TypeError) as e:
+            self.logger.error(f"Weather data has unexpected shape: {e}", exc_info=True)
+            if not require_weather:
+                return self._empty_weather_context(), None
+            return None, Response("Weather data unavailable", status=503, mimetype='text/plain')
+
         return context, None
 
     def get_weather(self):
         """Render weather template."""
-        context, error = self._get_weather_context()
+        context, error = self._get_weather_context(require_weather=True)
         if error:
             return error
         return render_template('weather.html', **context)
 
     def get_picture(self):
         """Render picture template with weather overlay."""
-        context, error = self._get_weather_context()
+        context, error = self._get_weather_context(require_weather=False)
         if error:
             return error
+        context['refresh_interval'] = self.config.frontend_refresh_interval
         return render_template('picture.html', **context)
+
+    def get_status(self):
+        """Return a safe local diagnostics snapshot without external network calls."""
+        cache_stats = self.cache_manager.get_all_stats()
+        background_tasks = []
+        background_enabled = False
+
+        if self.task_manager:
+            background_enabled = self.task_manager.is_enabled()
+            background_tasks = self.task_manager.get_task_status()
+
+        photos_ready = bool(self.config.album_id) and os.path.exists(
+            self.config.drive_credentials_file
+        )
+
+        return {
+            'status': 'ready' if photos_ready else 'needs_setup',
+            'photos': {
+                'album_configured': bool(self.config.album_id),
+                'drive_credentials_file_present': os.path.exists(
+                    self.config.drive_credentials_file
+                ),
+                'drive_token_file_present': os.path.exists(
+                    self.config.drive_token_file
+                ),
+                'cache': cache_stats.get('files', {})
+            },
+            'weather': {
+                'configured': bool(self.config.weather_api_key),
+                'location_configured': bool(self.config.weather_location),
+                'current_cache': cache_stats.get('weather', {}),
+                'forecast_cache': cache_stats.get('forecast', {}),
+                'chart_cache': cache_stats.get('chart', {})
+            },
+            'background_tasks': {
+                'enabled': background_enabled,
+                'tasks': background_tasks
+            },
+            'cache': cache_stats,
+            'config': {
+                'frontend_refresh_interval': self.config.frontend_refresh_interval,
+                'default_port': self.config.default_port
+            }
+        }
     
     def start_background_tasks(self, enabled: bool = True) -> None:
         """Start background tasks."""
@@ -226,7 +301,8 @@ def main():
     # Load configuration
     try:
         config = Config.load(args.config)
-        config.validate()
+        if not config.validate():
+            return 1
     except Exception as e:
         # Logger may not be set up yet, fall back to basic logging
         import logging as _logging

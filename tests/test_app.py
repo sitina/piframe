@@ -168,14 +168,43 @@ class TestPiFrameApp(unittest.TestCase):
             call_kwargs = mock_render.call_args[1]
             self.assertEqual(call_kwargs['temperature'], 20.0)
             self.assertEqual(call_kwargs['weather_type'], 'Clear')
+            self.assertTrue(call_kwargs['weather_available'])
+            self.assertEqual(
+                call_kwargs['refresh_interval'],
+                self.config.frontend_refresh_interval
+            )
 
     def test_get_picture_no_weather(self):
-        """Test get_picture when weather data is unavailable"""
+        """Test get_picture renders without weather data."""
         self.app.weather_service.get_current_weather.return_value = None
 
-        result = self.app.get_picture()
-        # When weather data is unavailable, the app returns a 503 Response
-        self.assertEqual(result.status_code, 503)
+        with patch('app.render_template') as mock_render:
+            mock_render.return_value = "rendered template"
+            result = self.app.get_picture()
+
+            self.assertEqual(result, "rendered template")
+            mock_render.assert_called_once()
+            call_kwargs = mock_render.call_args[1]
+            self.assertFalse(call_kwargs['weather_available'])
+            self.assertEqual(call_kwargs['weather_type'], 'Unavailable')
+            self.assertEqual(call_kwargs['forecast'], [])
+            self.assertEqual(
+                call_kwargs['refresh_interval'],
+                self.config.frontend_refresh_interval
+            )
+
+    def test_get_picture_malformed_weather_falls_back(self):
+        """Test malformed weather data does not block the photo view."""
+        self.app.weather_service.get_current_weather.return_value = {'main': {}}
+
+        with patch('app.render_template') as mock_render:
+            mock_render.return_value = "rendered template"
+            result = self.app.get_picture()
+
+            self.assertEqual(result, "rendered template")
+            call_kwargs = mock_render.call_args[1]
+            self.assertFalse(call_kwargs['weather_available'])
+            self.assertEqual(call_kwargs['forecast'], [])
 
     def test_random_picture_route(self):
         """Test random picture route"""
@@ -252,6 +281,28 @@ class TestPiFrameApp(unittest.TestCase):
         response = self.client.get('/weather/forecast.png')
         self.assertEqual(response.status_code, 500)
         self.assertIn(b'Chart generation failed', response.data)
+
+    def test_status_route(self):
+        """Test status route returns safe local diagnostics."""
+        self.app.cache_manager.get_all_stats.return_value = {
+            'files': {'valid_entries': 1},
+            'weather': {'valid_entries': 0},
+            'forecast': {'valid_entries': 0},
+            'chart': {'valid_entries': 0}
+        }
+
+        response = self.client.get('/status')
+
+        self.assertEqual(response.status_code, 200)
+        data = json.loads(response.data)
+        self.assertIn(data['status'], ['ready', 'needs_setup'])
+        self.assertTrue(data['photos']['album_configured'])
+        self.assertFalse(data['weather']['location_configured'])
+        self.assertEqual(
+            data['config']['frontend_refresh_interval'],
+            self.config.frontend_refresh_interval
+        )
+        self.assertNotIn('weather_api_key', response.get_data(as_text=True))
 
     def test_start_background_tasks(self):
         """Test starting background tasks"""
@@ -436,6 +487,7 @@ class TestMainFunction(unittest.TestCase):
         mock_config.log_file = 'logs/piframe.log'
         mock_config.default_port = 5001
         mock_config.default_host = "0.0.0.0"
+        mock_config.validate.return_value = True
         mock_config_class.load.return_value = mock_config
 
         mock_piframe_app = MagicMock()
@@ -450,6 +502,31 @@ class TestMainFunction(unittest.TestCase):
         mock_setup_logging.assert_called_once()
         mock_piframe_app.start_background_tasks.assert_called_once_with(enabled=True)
         mock_piframe_app.run.assert_called_once()
+
+    @unittest.skipIf(Flask is None, "Flask not available")
+    @patch('app.argparse.ArgumentParser')
+    @patch('app.Config')
+    @patch('app.setup_logging')
+    @patch('app.PiFrameApp')
+    def test_main_validation_failure(self, mock_app_class, mock_setup_logging,
+                                     mock_config_class, mock_parser_class):
+        """Test main stops when configuration validation fails."""
+        mock_args = MagicMock()
+        mock_args.config = 'config/config.json'
+
+        mock_parser = MagicMock()
+        mock_parser.parse_args.return_value = mock_args
+        mock_parser_class.return_value = mock_parser
+
+        mock_config = MagicMock(spec=Config)
+        mock_config.validate.return_value = False
+        mock_config_class.load.return_value = mock_config
+
+        result = main()
+
+        self.assertEqual(result, 1)
+        mock_setup_logging.assert_not_called()
+        mock_app_class.assert_not_called()
 
     @unittest.skipIf(Flask is None, "Flask not available")
     @patch('app.argparse.ArgumentParser')
@@ -490,11 +567,12 @@ class TestMainFunction(unittest.TestCase):
         mock_parser.parse_args.return_value = mock_args
         mock_parser_class.return_value = mock_parser
         
-        mock_config = Config()
+        mock_config = MagicMock(spec=Config)
         mock_config.album_id = "test_album"
         mock_config.log_file = 'logs/piframe.log'
         mock_config.default_port = 5001
         mock_config.default_host = "0.0.0.0"
+        mock_config.validate.return_value = True
         mock_config_class.load.return_value = mock_config
         
         mock_piframe_app = MagicMock()
@@ -528,11 +606,12 @@ class TestMainFunction(unittest.TestCase):
         mock_parser.parse_args.return_value = mock_args
         mock_parser_class.return_value = mock_parser
         
-        mock_config = Config()
+        mock_config = MagicMock(spec=Config)
         mock_config.album_id = "test_album"
         mock_config.log_file = 'logs/piframe.log'
         mock_config.default_port = 5001
         mock_config.default_host = "0.0.0.0"
+        mock_config.validate.return_value = True
         mock_config_class.load.return_value = mock_config
         
         mock_piframe_app = MagicMock()

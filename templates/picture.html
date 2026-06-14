@@ -108,6 +108,7 @@
         var currentImageHash = null;
         var isLoading = false;
         var loadingTimeout = null;
+        var REFRESH_INTERVAL_MS = {{ refresh_interval * 1000 }};
 
         function showLoadingIndicator() {
             var metadataFrame = document.querySelector('.metadataFrame');
@@ -189,6 +190,29 @@
             }
         }
 
+        function restoreImageAfterFailure() {
+            var loadingPlaceholder = document.querySelector('.loading-placeholder');
+            var mainImage = document.querySelector('.fullScreenPhoto');
+            var metadataFrame = document.querySelector('.metadataFrame');
+            var hasPreviousImage = mainImage && mainImage.getAttribute('src');
+
+            if (loadingPlaceholder) {
+                if (hasPreviousImage) {
+                    if (loadingPlaceholder.className.indexOf('hidden') === -1) {
+                        loadingPlaceholder.className += ' hidden';
+                    }
+                } else {
+                    loadingPlaceholder.innerHTML = '<div>Unable to load image</div>';
+                }
+            }
+            if (mainImage && hasPreviousImage) {
+                mainImage.style.display = 'block';
+            }
+            if (metadataFrame) {
+                metadataFrame.style.display = 'none';
+            }
+        }
+
         function updateImageAndMetadata(attempt) {
             if (typeof attempt === 'undefined') attempt = 0;
             
@@ -217,15 +241,20 @@
                             var img = document.querySelector('.fullScreenPhoto');
                             if (img && data.picture_url) {
                                 img.onload = function() {
-                                    hideLoadingIndicator();
+                                    var success = finalizeImageUpdate(data);
+                                    if (success) {
+                                        hideLoadingIndicator();
+                                    }
+                                    resetLoadingAndHandle(success, data);
                                 };
                                 
                                 img.onerror = function() {
-                                    // Keep loading indicator visible on error
+                                    resetLoadingAndHandle(false);
                                 };
                                 
                                 img.src = data.picture_url;
                                 currentImageHash = data.image_hash;
+                                return;
                             }
 
                             var success = finalizeImageUpdate(data);
@@ -249,6 +278,7 @@
                     updateImageAndMetadata(retryCount);
                 }, RETRY_DELAY);
             } else {
+                restoreImageAfterFailure();
                 try {
                     var metadataFrame = document.querySelector('.metadataFrame');
                     if (metadataFrame) {
@@ -264,7 +294,7 @@
             updateImageAndMetadata();
             setInterval(function() {
                 updateImageAndMetadata();
-            }, 30000);
+            }, REFRESH_INTERVAL_MS);
         };
     </script>
 </head>
@@ -283,9 +313,12 @@
     <div class="infoFrame">
         <h1 id="creation-date"></h1>
         <span id="creation-time"></span><br />
+        {% if weather_available %}
         <h1>{{ temperature }}°C</h1>
         FL {{ feels_like }}°C / {{ weather_type }}
+        {% endif %}
     </div>
+    {% if weather_available and forecast %}
     <div class="weatherFrame">
         <table>
             <tbody>
@@ -305,6 +338,7 @@
     <div class="forecastFrame">
         <img src="/weather/forecast.png" alt="forecast trendline" style="width: 100%" />
     </div>
+    {% endif %}
 
 </body>
 
