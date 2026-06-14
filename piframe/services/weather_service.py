@@ -13,15 +13,32 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-from matplotlib.figure import Figure
-
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
 from ..utils.logging import LoggerMixin, log_performance
+
+
+FigureCanvas = None
+Figure = None
+plt = None
+
+
+def _load_matplotlib():
+    """Load matplotlib only when chart rendering is requested."""
+    global FigureCanvas, Figure, plt
+
+    if FigureCanvas is None or Figure is None or plt is None:
+        import matplotlib
+        matplotlib.use('Agg')  # Non-interactive backend
+        import matplotlib.pyplot as matplotlib_pyplot
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        from matplotlib.figure import Figure as MatplotlibFigure
+
+        FigureCanvas = FigureCanvasAgg
+        Figure = MatplotlibFigure
+        plt = matplotlib_pyplot
+
+    return FigureCanvas, Figure, plt
 
 
 class WeatherService(LoggerMixin):
@@ -256,16 +273,18 @@ class WeatherService(LoggerMixin):
                 self.logger.warning("No processed forecast data available")
                 return None
             
+            figure_canvas, _, pyplot = _load_matplotlib()
+
             # Create chart
             fig = self._create_forecast_figure(forecast)
             
             # Convert to PNG bytes
             output = io.BytesIO()
-            FigureCanvas(fig).print_png(output)
+            figure_canvas(fig).print_png(output)
             chart_bytes = output.getvalue()
             
             # Close figure to free memory
-            plt.close(fig)
+            pyplot.close(fig)
             
             # Cache the result
             self.cache_manager.set('chart', cache_key, chart_bytes)
@@ -277,7 +296,7 @@ class WeatherService(LoggerMixin):
             self.logger.error(f"Chart generation failed: {e}", exc_info=True)
             return None
     
-    def _create_forecast_figure(self, forecast: List[Dict[str, Any]]) -> Figure:
+    def _create_forecast_figure(self, forecast: List[Dict[str, Any]]) -> Any:
         """
         Create matplotlib figure for forecast data.
         
@@ -287,8 +306,10 @@ class WeatherService(LoggerMixin):
         Returns:
             Matplotlib figure
         """
+        _, figure_class, _ = _load_matplotlib()
+
         # Use smaller figure size for better performance
-        fig = Figure(figsize=(8, 4), dpi=72)
+        fig = figure_class(figsize=(8, 4), dpi=72)
         fig.patch.set_alpha(0.3)
         axis = fig.add_subplot(1, 1, 1, facecolor="none")
         

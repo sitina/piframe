@@ -13,10 +13,22 @@ from flask import Flask, Response, render_template, jsonify
 
 from piframe.config import Config
 from piframe.utils import setup_logging, get_logger
-from piframe.services import WeatherService, DriveService, ImageService
 from piframe.models import get_cache_manager
 from piframe.background import BackgroundTaskManager
 from piframe.background.tasks import create_standard_tasks
+
+
+def create_services(config: Config, cache_manager):
+    """Create application services at composition time."""
+    from piframe.services.weather_service import WeatherService
+    from piframe.services.drive_service import DriveService
+    from piframe.services.image_service import ImageService
+
+    weather_service = WeatherService(config, cache_manager)
+    drive_service = DriveService(config, cache_manager)
+    image_service = ImageService(config, drive_service, cache_manager)
+
+    return weather_service, drive_service, image_service
 
 
 class PiFrameApp:
@@ -36,9 +48,11 @@ class PiFrameApp:
         
         # Initialize services
         self.cache_manager = get_cache_manager(config)
-        self.weather_service = WeatherService(config, self.cache_manager)
-        self.drive_service = DriveService(config, self.cache_manager)
-        self.image_service = ImageService(config, self.drive_service, self.cache_manager)
+        (
+            self.weather_service,
+            self.drive_service,
+            self.image_service
+        ) = create_services(config, self.cache_manager)
         
         # Background task manager (will be initialized later)
         self.task_manager: Optional[BackgroundTaskManager] = None
@@ -393,10 +407,6 @@ def create_app(config_path='config/config.json', start_background_tasks=False):
         logger = get_logger(__name__)
         logger.error(f"Failed to create app: {e}")
         raise
-
-
-# For flask run compatibility - create app instance without global state
-app = create_app(start_background_tasks=False)
 
 
 if __name__ == '__main__':

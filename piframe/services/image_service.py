@@ -9,7 +9,7 @@ import io
 import itertools
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, TYPE_CHECKING
 
 from flask import Response, send_file
 
@@ -17,7 +17,9 @@ from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
 from ..utils import metadata as image_metadata
 from ..utils.logging import LoggerMixin, log_performance
-from .drive_service import DriveService
+
+if TYPE_CHECKING:
+    from .drive_service import DriveService
 
 
 class ImagePrepareError(enum.Enum):
@@ -76,7 +78,7 @@ class ImageService(LoggerMixin):
     # Thread-safe counter for correlation IDs
     _correlation_counter = itertools.count()
 
-    def __init__(self, config: Config, drive_service: DriveService,
+    def __init__(self, config: Config, drive_service: 'DriveService',
                  cache_manager: Optional[CacheManager] = None):
         """
         Initialize image service.

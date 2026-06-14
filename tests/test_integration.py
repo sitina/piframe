@@ -38,10 +38,17 @@ class TestIntegration(unittest.TestCase):
         }
 
         # Create app with mocked services
-        with patch('app.WeatherService'), \
-             patch('app.DriveService'), \
-             patch('app.ImageService'), \
+        self.mock_weather_service = MagicMock()
+        self.mock_drive_service = MagicMock()
+        self.mock_image_service = MagicMock()
+
+        with patch('app.create_services') as mock_create_services, \
              patch('app.get_cache_manager'):
+            mock_create_services.return_value = (
+                self.mock_weather_service,
+                self.mock_drive_service,
+                self.mock_image_service
+            )
             self.piframe_app = PiFrameApp(self.config)
             self.piframe_app.app.config['TESTING'] = True
             self.client = self.piframe_app.app.test_client()

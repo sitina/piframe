@@ -30,10 +30,17 @@ class TestPiFrameApp(unittest.TestCase):
         self.config.secret_key = "test_secret_key"
         
         # Mock services to avoid actual API calls
-        with patch('app.WeatherService'), \
-             patch('app.DriveService'), \
-             patch('app.ImageService'), \
+        self.mock_weather_service = MagicMock()
+        self.mock_drive_service = MagicMock()
+        self.mock_image_service = MagicMock()
+
+        with patch('app.create_services') as mock_create_services, \
              patch('app.get_cache_manager'):
+            mock_create_services.return_value = (
+                self.mock_weather_service,
+                self.mock_drive_service,
+                self.mock_image_service
+            )
             self.app = PiFrameApp(self.config)
             self.app.app.config['TESTING'] = True
             self.client = self.app.app.test_client()

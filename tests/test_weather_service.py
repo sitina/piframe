@@ -253,15 +253,8 @@ class TestWeatherService(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]['temp'], 20.0)
 
-    @patch('piframe.services.weather_service.FigureCanvas')
-    @patch('piframe.services.weather_service.plt.close')
-    def test_generate_forecast_chart_success(self, mock_plt_close, mock_canvas_class):
+    def test_generate_forecast_chart_success(self):
         """Test successful forecast chart generation."""
-        # Mock canvas
-        mock_canvas = MagicMock()
-        mock_canvas.print_png.return_value = None
-        mock_canvas_class.return_value = mock_canvas
-        
         # Mock cache miss
         self.mock_cache_manager.get.return_value = None
         
@@ -277,16 +270,15 @@ class TestWeatherService(unittest.TestCase):
         }
         
         with patch.object(self.weather_service, 'get_forecast', return_value=forecast_data):
-            with patch('io.BytesIO') as mock_bytesio:
-                mock_output = MagicMock()
-                mock_output.getvalue.return_value = b'fake_png_data'
-                mock_bytesio.return_value = mock_output
-                
-                result = self.weather_service.generate_forecast_chart()
-                
-                self.assertEqual(result, b'fake_png_data')
-                self.mock_cache_manager.set.assert_called_with('chart', 'forecast_chart', b'fake_png_data')
-                mock_plt_close.assert_called_once()
+            result = self.weather_service.generate_forecast_chart()
+
+            self.assertIsInstance(result, bytes)
+            self.assertGreater(len(result), 0)
+            self.mock_cache_manager.set.assert_called_once()
+            cache_name, cache_key, chart_bytes = self.mock_cache_manager.set.call_args[0]
+            self.assertEqual(cache_name, 'chart')
+            self.assertEqual(cache_key, 'forecast_chart')
+            self.assertEqual(chart_bytes, result)
 
     def test_generate_forecast_chart_cached_data(self):
         """Test forecast chart generation with cached data."""
