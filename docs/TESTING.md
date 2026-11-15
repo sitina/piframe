@@ -92,7 +92,7 @@ python -m unittest tests.test_image_service.TestImageService -v
 
 2. **Full Tests** - `tests.yml`
    - Runs on main branch pushes
-   - Complete test matrix (Python 3.9-3.12)
+   - Complete test matrix (Python 3.11-3.15)
    - All test categories
    - Code quality checks
 
@@ -111,10 +111,11 @@ python -m unittest tests.test_image_service.TestImageService -v
 ### Python Version Support
 
 The test suite runs on:
-- ✅ Python 3.9 (Minimum supported)
-- ✅ Python 3.10
-- ✅ Python 3.11 (Primary development)
-- ✅ Python 3.12 (Latest)
+- ✅ Python 3.11 (Minimum supported)
+- ✅ Python 3.12
+- ✅ Python 3.13
+- ✅ Python 3.14 (Development default)
+- ✅ Python 3.15
 
 ### Platform Support
 

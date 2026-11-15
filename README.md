@@ -86,6 +86,9 @@ This script will:
 
 ### Manual Setup
 
+Python 3.11 or newer is required. Python 3.14 is the development default;
+CI covers Python 3.11–3.15.
+
 1. **Create virtual environment**:
 ```bash
 python3 -m venv venv
@@ -94,8 +97,11 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 2. **Install dependencies**:
 ```bash
-pip install -r requirements.txt
+python -m pip install --require-hashes -r requirements.txt
 ```
+
+For development and tests, install `requirements-dev.txt` instead. It includes
+the same locked runtime dependencies plus coverage and formatting tools.
 
 3. **Configure the application**:
    - **Option A**: Use the interactive setup script: `python setup.py`
@@ -113,6 +119,30 @@ python app.py
 # Custom port
 python app.py --port 8080
 ```
+
+## Dependency updates
+
+`requirements.in` declares runtime inputs and security minimums;
+`requirements.txt` locks the complete dependency tree with distribution hashes.
+`requirements-dev.txt` adds test and formatting tools using the same runtime pins.
+Generated environment markers select compatible packages for Python 3.11–3.15.
+
+To update both lockfiles with uv:
+
+```bash
+uv pip compile requirements.in --universal --python-version 3.11 --generate-hashes --upgrade -o requirements.txt
+uv pip compile requirements-dev.in --universal --python-version 3.11 --generate-hashes --upgrade -o requirements-dev.txt
+python -m pip install --require-hashes -r requirements-dev.txt
+python -m pip check
+python -m unittest discover -s tests -v
+```
+
+The end-to-end test runs a local HTTP server with real application services,
+image/EXIF parsing, and chart rendering. Only the external Drive and weather API
+transports use fixture responses, so tests need no credentials or API quota.
+Verify live API access separately on the configured frame after updating.
+Raspberry Pi installations should use a supported Python and a 64-bit OS to
+benefit from upstream Linux ARM64 wheels; 32-bit systems may need source builds.
 
 ## Configuration
 

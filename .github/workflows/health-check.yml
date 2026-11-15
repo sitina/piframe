@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'requirements.txt'
+      - 'requirements*.in'
+      - 'requirements*.txt'
       - 'pyproject.toml'
 
 jobs:
@@ -29,7 +30,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --require-hashes -r requirements.txt
         pip install pip-audit safety bandit
 
     - name: Check for security vulnerabilities
@@ -112,7 +113,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.9", "3.12"]
+        python-version: ["3.11", "3.15"]
       fail-fast: false
     
     env:
@@ -134,13 +135,13 @@ jobs:
       if: runner.os != 'Windows'
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --require-hashes -r requirements.txt
 
     - name: Install dependencies (Windows)
       if: runner.os == 'Windows'
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --require-hashes -r requirements.txt
 
     - name: Test core functionality
       run: |

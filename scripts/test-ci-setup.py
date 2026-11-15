@@ -61,8 +61,8 @@ def check_environment():
     python_version = sys.version_info
     print(f"   Python version: {python_version.major}.{python_version.minor}.{python_version.micro}")
     
-    if python_version < (3, 9):
-        print("   ❌ Python 3.9+ required")
+    if python_version < (3, 11):
+        print("   ❌ Python 3.11+ required")
         return False
     
     # Check required files exist

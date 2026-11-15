@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15"]
       fail-fast: false  # Don't cancel other jobs if one fails
     
     env:
@@ -36,34 +36,18 @@ jobs:
     - name: Install Python dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --require-hashes -r requirements-dev.txt
 
     - name: Lint code with autopep8 (check only)
       run: |
-        pip install autopep8
         autopep8 --recursive --diff --exit-code . || echo "Code formatting issues found (not failing build)"
       continue-on-error: true
 
-    - name: Run new modular architecture tests
-      run: |
-        python -m unittest discover tests -p "test_*_service.py" -v
-        python -m unittest tests.test_cache_manager -v
-
-    - name: Run config tests
-      run: |
-        python -m unittest tests.test_config -v
-      continue-on-error: true
-
-    - name: Run integration tests (selected)
-      run: |
-        # Run only non-hanging integration tests
-        python -m unittest tests.test_integration.TestIntegration.test_metadata_extraction_integration -v
-        python -m unittest tests.test_integration.TestIntegration.test_config_integration -v
-      continue-on-error: true
+    - name: Run complete test suite including HTTP end-to-end test
+      run: python -m unittest discover -s tests -v
 
     - name: Generate coverage report
       run: |
-        pip install coverage
         python scripts/run_tests.py --pattern "test_*_service.py" --pattern "test_cache_manager.py" || echo "Coverage generation completed"
 
     - name: Upload coverage reports to Codecov
@@ -95,7 +79,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        python -m pip install --require-hashes -r requirements-dev.txt
 
     - name: Test core services initialization
       run: |
@@ -215,7 +199,7 @@ jobs:
     - name: Install linting tools
       run: |
         python -m pip install --upgrade pip
-        pip install autopep8 isort
+        python -m pip install --require-hashes -r requirements-dev.txt
 
     - name: Check code formatting with autopep8
       run: |

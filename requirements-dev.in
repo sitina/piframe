@@ -1,0 +1,5 @@
+# Keep development and production environments on the same runtime versions.
+-r requirements.txt
+coverage>=7.17.3,<8
+autopep8>=2.3.2,<3
+isort>=9.0.2,<10
