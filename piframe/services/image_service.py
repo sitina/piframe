@@ -16,6 +16,7 @@ from flask import Response, send_file
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
 from ..utils import metadata as image_metadata
+from .image_processor import ImageProcessor
 from ..utils.logging import LoggerMixin, log_performance
 
 if TYPE_CHECKING:
@@ -88,6 +89,7 @@ class ImageService(LoggerMixin):
             drive_service: Google Drive service instance
             cache_manager: Cache manager instance
         """
+        self.image_processor = ImageProcessor(config)
         self.config = config
         self.drive_service = drive_service
         self.cache_manager = cache_manager or get_cache_manager(config)
@@ -369,7 +371,11 @@ class ImageService(LoggerMixin):
             
             # Extract metadata using existing module
             image_data.seek(0)  # Ensure we're at the beginning
-            metadata = image_metadata.extract_image_metadata(image_data, file_created_time=file_created_time)
+            metadata = image_metadata.extract_image_metadata(
+                image_data, file_created_time=file_created_time,
+                max_metadata_bytes=self.config.max_metadata_bytes,
+                max_image_pixels=self.config.max_image_pixels,
+                max_download_bytes=self.config.max_download_bytes)
             display_info = image_metadata.format_metadata_for_display(metadata)
             
             # Package the metadata
@@ -410,6 +416,8 @@ class ImageService(LoggerMixin):
         Returns:
             Flask Response object
         """
+        # Inspect before serving even when no metadata was requested.
+        self.image_processor.inspect(image_data)
         # Create the response
         image_data.seek(0)
         response = send_file(

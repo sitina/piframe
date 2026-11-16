@@ -42,6 +42,9 @@ class DriveFixtureTransport:
         elif "/files/fixture-photo?" in uri and "alt=media" in uri:
             data = self.photo
             content_type = "image/jpeg"
+        elif "/files/fixture-photo?" in uri:
+            data = json.dumps({'size': str(len(self.photo))}).encode()
+            content_type = 'application/json'
         else:
             raise AssertionError(f"Unexpected Drive request: {uri}")
         return httplib2.Response({

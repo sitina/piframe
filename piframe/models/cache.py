@@ -4,6 +4,7 @@ Handles all caching logic with TTL, size limits, and cleanup.
 """
 
 import time
+import io
 import threading
 from typing import Any, Dict, Optional, Union, List, Tuple
 from dataclasses import dataclass
@@ -42,7 +43,7 @@ class TTLCache:
     Thread-safe cache with Time-To-Live (TTL) and size limits.
     """
     
-    def __init__(self, max_size: int = 100, default_ttl: float = 3600):
+    def __init__(self, max_size: int = 100, default_ttl: float = 3600, max_bytes: Optional[int] = None):
         """
         Initialize cache.
         
@@ -50,6 +51,9 @@ class TTLCache:
             max_size: Maximum number of entries (LRU eviction when exceeded)
             default_ttl: Default TTL in seconds
         """
+        if max_bytes is not None and (isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0):
+            raise ValueError("Cache byte budget must be a nonnegative integer")
+        self.max_bytes = max_bytes
         self.max_size = max_size
         self.default_ttl = default_ttl
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
@@ -96,18 +100,35 @@ class TTLCache:
             ttl = self.default_ttl
         
         with self._lock:
+            if self.max_bytes is not None and self._payload_size(value) > self.max_bytes:
+                self._cache.pop(key, None)
+                return
             timestamp = time.time()
             entry = CacheEntry(value, timestamp, ttl)
             
             self._cache[key] = entry
             self._cache.move_to_end(key)
             
-            # Enforce size limit
-            while len(self._cache) > self.max_size:
+            # Bound both entry count and retained payload bytes.
+            while len(self._cache) > self.max_size or (
+                    self.max_bytes is not None and self._retained_bytes() > self.max_bytes):
                 oldest_key = next(iter(self._cache))
                 logger.debug(f"Evicting cache entry due to size limit: {oldest_key}")
                 del self._cache[oldest_key]
     
+    @staticmethod
+    def _payload_size(value):
+        if isinstance(value, memoryview):
+            return value.nbytes
+        if isinstance(value, (bytes, bytearray)):
+            return len(value)
+        if isinstance(value, io.BytesIO):
+            return value.getbuffer().nbytes
+        return 0
+
+    def _retained_bytes(self):
+        return sum(self._payload_size(entry.value) for entry in self._cache.values())
+
     def delete(self, key: str) -> bool:
         """
         Delete entry from cache.
@@ -169,7 +190,9 @@ class TTLCache:
                 'valid_entries': total_entries - expired_entries,
                 'max_size': self.max_size,
                 'total_accesses': total_access_count,
-                'entry_count': len(self._cache)
+                'entry_count': len(self._cache),
+                'retained_bytes': self._retained_bytes(),
+                'max_bytes': self.max_bytes
             }
 
 
@@ -201,7 +224,8 @@ class CacheManager:
         ]
         
         for name, ttl, size in cache_configs:
-            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl)
+            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl,
+                                          max_bytes=config.download_cache_max_bytes if name == "downloads" else None)
         
         logger.info(f"Initialized {len(self._caches)} caches from configuration")
     
@@ -217,7 +241,8 @@ class CacheManager:
         ]
         
         for name, ttl, size in default_configs:
-            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl)
+            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl,
+                                          max_bytes=32 * 1024 * 1024 if name == "downloads" else None)
         
         logger.info(f"Initialized {len(self._caches)} caches with defaults")
     

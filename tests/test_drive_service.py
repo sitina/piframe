@@ -136,7 +136,7 @@ class TestDriveService(unittest.TestCase):
         counter_lock = threading.Lock()
         start = threading.Barrier(3)
         info = {'id': 'photo', 'name': 'photo.jpg', 'mimeType': 'image/jpeg',
-                'webViewLink': 'fixture-view'}
+                'webViewLink': 'fixture-view', 'size': '13'}
 
         def transport_call(result):
             nonlocal active, maximum
@@ -159,7 +159,7 @@ class TestDriveService(unittest.TestCase):
         self.drive_service._service = api
 
         class Downloader:
-            def __init__(self, buffer, request):
+            def __init__(self, buffer, request, **kwargs):
                 self.buffer = buffer
 
             def next_chunk(self):
@@ -477,62 +477,25 @@ class TestDriveService(unittest.TestCase):
         self.assertEqual(result.read(), cached_bytes)
         self.mock_cache_manager.get.assert_called_with('downloads', 'download_test_file_id')
 
-    @patch('piframe.services.drive_service.build')
-    @patch('piframe.services.drive_service.MediaIoBaseDownload')
-    def test_download_file_success(self, mock_downloader_class, mock_build):
-        """Test successful file download."""
+    def test_download_file_success_and_empty_file(self):
         self.mock_cache_manager.get.return_value = None
-        
-        # Mock service
-        mock_service = MagicMock()
-        mock_request = MagicMock()
-        mock_service.files().get_media.return_value = mock_request
-        mock_build.return_value = mock_service
-        
-        # Mock downloader
-        mock_downloader = MagicMock()
-        mock_downloader.next_chunk.return_value = (None, True)
-        mock_downloader_class.return_value = mock_downloader
-        
-        mock_creds = MagicMock()
-        mock_creds.valid = True
-        self.drive_service._credentials = mock_creds
-        
-        # Mock file data
-        test_data = b'test file data'
-        
-        with patch('io.BytesIO') as mock_bytesio:
-            mock_buffer = MagicMock()
-            mock_buffer.getbuffer().nbytes = len(test_data)
-            mock_buffer.read.return_value = test_data
-            mock_bytesio.return_value = mock_buffer
-            
-            result = self.drive_service.download_file('test_file_id')
-            
-            self.assertIsNotNone(result)
-            mock_service.files().get_media.assert_called_with(fileId='test_file_id')
-
-    @patch('piframe.services.drive_service.build')
-    def test_download_file_empty_file(self, mock_build):
-        """Test downloading empty file."""
-        self.mock_cache_manager.get.return_value = None
-        
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
-        
-        mock_creds = MagicMock()
-        mock_creds.valid = True
-        self.drive_service._credentials = mock_creds
-        
-        with patch('io.BytesIO') as mock_bytesio:
-            mock_buffer = MagicMock()
-            mock_buffer.getbuffer().nbytes = 0  # Empty file
-            mock_bytesio.return_value = mock_buffer
-            
-            with patch('piframe.services.drive_service.MediaIoBaseDownload'):
-                result = self.drive_service.download_file('test_file_id')
-                
-                self.assertIsNone(result)
+        api = MagicMock()
+        api.files.return_value.get.return_value.execute.return_value = {'size': '13'}
+        self.drive_service._service = api
+        for payload in [b'fixture image', b'']:
+            class Downloader:
+                def __init__(self, stream, request, **kwargs):
+                    self.stream = stream
+                def next_chunk(self):
+                    self.stream.write(payload)
+                    return None, True
+            with self.subTest(payload=payload), \
+                 patch('piframe.services.drive_service.MediaIoBaseDownload', Downloader):
+                result = self.drive_service.download_file('photo')
+                if payload:
+                    self.assertEqual(result.getvalue(), payload)
+                else:
+                    self.assertIsNone(result)
 
     def test_should_retry_download(self):
         """Test download retry logic."""

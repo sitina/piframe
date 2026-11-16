@@ -153,6 +153,18 @@ JSON token. Custom legacy `*.pickle` token paths resolve to a `credentials/`
 JSON sibling directory; pass the matching source/destination to the command.
 Custom JSON destinations must be inside a private directory (0700 on Unix).
 
+## Image resource budgets
+
+Defaults cap a download at 16 MiB, retained download payloads at 32 MiB, an image
+at 24 million pixels, and EXIF input at 1 MiB. JPEG, PNG, GIF, BMP and WebP are
+accepted; unsupported or oversized images are not served. Google file size is
+checked before media download, chunks are at most 1 MiB, and the output buffer
+rejects excess bytes. Concurrent cold reads reuse a completed cached download.
+These limits can be set in config JSON with `max_download_bytes`,
+`download_cache_max_bytes`, `max_image_pixels`, and `max_metadata_bytes`.
+The byte cache budget measures payloads, not Python/process overhead. Metadata
+work is byte-limited; it is not executed in a sandbox with a CPU time limit.
+
 ## Dependency updates
 
 `requirements.in` declares runtime inputs and security minimums;

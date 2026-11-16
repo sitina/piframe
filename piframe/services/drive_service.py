@@ -16,6 +16,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
+from .image_processor import BoundedImageBuffer, ImageRejected
 from .credential_store import CredentialStore, CredentialStoreError
 
 from ..config.settings import Config
@@ -330,9 +331,14 @@ class DriveService(LoggerMixin):
             Exception: On API errors
         """
         with self._api_lock:
+            metadata = self.service.files().get(fileId=file_id, fields='size').execute()
+            size = metadata.get('size')
+            if not isinstance(size, (str, int)) or isinstance(size, bool) or not 0 < int(size) <= self.config.max_download_bytes:
+                raise ImageRejected('Drive file size is absent or exceeds byte budget')
             request = self.service.files().get_media(fileId=file_id)
-            file_buffer = io.BytesIO()
-            downloader = MediaIoBaseDownload(file_buffer, request)
+            file_buffer = BoundedImageBuffer(self.config.max_download_bytes)
+            downloader = MediaIoBaseDownload(
+                file_buffer, request, chunksize=min(1024 * 1024, self.config.max_download_bytes))
 
             done = False
             while not done:
@@ -367,39 +373,44 @@ class DriveService(LoggerMixin):
         if cached is not None:
             return cached
 
-        retry_delay = 1
+        with self._api_lock:
+            # A waiting cold request reuses the first successful download.
+            cached = self._get_cached_download(file_id, cache_key)
+            if cached is not None:
+                return cached
+            retry_delay = 1
 
-        for attempt in range(max_retries):
-            try:
-                self.logger.info(f"Downloading file {file_id} (attempt {attempt + 1}/{max_retries})")
+            for attempt in range(max_retries):
+                try:
+                    self.logger.info(f"Downloading file {file_id} (attempt {attempt + 1}/{max_retries})")
 
-                file_buffer = self._execute_download(file_id)
+                    file_buffer = self._execute_download(file_id)
 
-                self._cache_download(file_id, file_buffer)
+                    self._cache_download(file_id, file_buffer)
 
-                self.logger.info(f"Successfully downloaded file {file_id}")
-                file_buffer.seek(0)
-                return file_buffer
+                    self.logger.info(f"Successfully downloaded file {file_id}")
+                    file_buffer.seek(0)
+                    return file_buffer
 
-            except Exception as e:
-                error_msg = str(e)
-                self.logger.warning(f"Download attempt {attempt + 1} failed: {error_msg}")
+                except Exception as e:
+                    error_msg = str(e)
+                    self.logger.warning(f"Download attempt {attempt + 1} failed: {error_msg}")
 
-                should_retry, should_reset = self._should_retry_download(error_msg)
+                    should_retry, should_reset = self._should_retry_download(error_msg)
 
-                if should_reset:
-                    self._reset_service()
+                    if should_reset:
+                        self._reset_service()
 
-                if should_retry and attempt < max_retries - 1:
-                    self.logger.info(f"Retrying download in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
+                    if should_retry and attempt < max_retries - 1:
+                        self.logger.info(f"Retrying download in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
 
-                break
+                    break
 
-        self.logger.error(f"Failed to download file {file_id} after {max_retries} attempts")
-        return None
+            self.logger.error(f"Failed to download file {file_id} after {max_retries} attempts")
+            return None
     
     def _reset_service(self) -> None:
         """Reset the Drive service to force new connection."""

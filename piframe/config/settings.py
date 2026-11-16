@@ -48,6 +48,10 @@ class Config:
     # Cache sizes
     download_cache_size: int = 5
     metadata_cache_size: int = 20
+    max_download_bytes: int = 16 * 1024 * 1024
+    download_cache_max_bytes: int = 32 * 1024 * 1024
+    max_image_pixels: int = 24_000_000
+    max_metadata_bytes: int = 1024 * 1024
     
     # Server settings
     default_host: str = "0.0.0.0"

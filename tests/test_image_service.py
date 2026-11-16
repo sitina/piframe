@@ -44,6 +44,8 @@ class TestImageService(unittest.TestCase):
             cache_manager=self.mock_cache_manager
         )
 
+        self.image_service.image_processor = MagicMock()
+
     def tearDown(self):
         """Clean up after tests."""
         self.image_service.close()
