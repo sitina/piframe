@@ -11,7 +11,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from piframe.services.image_service import ImageService
+from piframe.services.image_service import ImageService, PreparedImage
 from piframe.services.drive_service import DriveService
 from piframe.config.settings import Config
 from piframe.models.cache import CacheManager
@@ -31,6 +31,7 @@ class TestImageService(unittest.TestCase):
         # Mock services
         self.mock_cache_manager = MagicMock(spec=CacheManager)
         self.mock_drive_service = MagicMock(spec=DriveService)
+        self.mock_cache_manager.get.return_value = None
         
         # Create Flask app context for testing
         self.app = Flask(__name__)
@@ -242,18 +243,13 @@ class TestImageService(unittest.TestCase):
 
     def test_serve_synchronized_image_current(self):
         """Test serving synchronized image when current image exists."""
-        # Set up synchronized state
-        self.image_service._sync_state.image_id = 'test_id'
-        self.image_service._sync_state.timestamp = time.time()
-        
-        with patch.object(self.image_service, 'serve_image_by_id') as mock_serve:
-            mock_response = MagicMock()
-            mock_serve.return_value = mock_response
-            
+        snapshot = self.image_service._publish_snapshot(PreparedImage(
+            {'id': 'test_id', 'name': 'test.jpg', 'type': 'image/jpeg'},
+            io.BytesIO(b'photo'), 'unused', {}))
+        with patch.object(self.image_service, '_snapshot_response') as serve:
             result = self.image_service.serve_synchronized_image()
-            
-            self.assertEqual(result, mock_response)
-            mock_serve.assert_called_with('test_id', include_metadata=False)
+            self.assertEqual(result, serve.return_value)
+            serve.assert_called_once_with(snapshot)
 
     def test_serve_synchronized_image_expired(self):
         """Test serving synchronized image when current image is expired."""
@@ -377,7 +373,7 @@ class TestImageService(unittest.TestCase):
         result = self.image_service.get_image_metadata('test_id', image_data)
         
         self.assertEqual(result, cached_metadata)
-        self.mock_cache_manager.get.assert_called_with('metadata', 'metadata_test_id')
+        self.assertTrue(self.mock_cache_manager.get.call_args.args[1].startswith('metadata_test_id_'))
 
     @patch('piframe.services.image_service.image_metadata')
     def test_get_image_metadata_extraction_error(self, mock_metadata_module):
@@ -546,6 +542,9 @@ class TestImageService(unittest.TestCase):
             }
         }
         
+        self.image_service._publish_snapshot(PreparedImage(
+            {'id': 'test_id', 'name': 'test.jpg', 'type': 'image/jpeg'},
+            io.BytesIO(b'photo'), 'unused', self.image_service._sync_state.metadata))
         result = self.image_service.get_synchronized_metadata()
         
         self.assertEqual(result['creation_date'], '25.12.2023')
@@ -735,20 +734,14 @@ class TestImageService(unittest.TestCase):
 
     def test_serve_synchronized_image_with_hash_header(self):
         """Test that synchronized image includes hash in headers."""
-        self.image_service._sync_state.image_id = 'test_id'
-        self.image_service._sync_state.timestamp = time.time() - 10
-        self.image_service._sync_state.image_hash = 'test_hash_12345'
-        
-        mock_response = MagicMock()
-        mock_response.headers = {}
-        
-        with patch.object(self.image_service, 'serve_image_by_id', return_value=mock_response):
+        snapshot = self.image_service._publish_snapshot(PreparedImage(
+            {'id': 'test_id', 'name': 'test.jpg', 'type': 'image/jpeg'},
+            io.BytesIO(b'photo'), 'unused', {}))
+        with patch.object(self.image_service, '_create_image_response', return_value=Response()) as serve:
             result = self.image_service.serve_synchronized_image()
-            
-            # Check sync headers
-            self.assertEqual(mock_response.headers['X-Sync-Status'], 'synchronized')
-            self.assertEqual(mock_response.headers['X-Image-Hash'], 'test_hash_12345')
-            self.assertIn('X-Sync-Age', mock_response.headers)
+            self.assertEqual(result.headers['X-Sync-Status'], 'synchronized')
+            self.assertEqual(result.headers['X-Image-Hash'], snapshot.image_hash)
+            self.assertIn('X-Sync-Age', result.headers)
 
 
 if __name__ == '__main__':

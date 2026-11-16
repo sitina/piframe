@@ -120,6 +120,10 @@ class PiFrameApp:
             metadata = self.image_service.get_random_image_metadata()
             return jsonify(metadata)
         
+        @self.app.route("/random-picture/snapshots/<token>")
+        def image_snapshot(token):
+            return self.image_service.serve_snapshot(token)
+
         @self.app.route("/random-picture/synchronized")
         def synchronized_random_picture():
             """Get synchronized random picture (for metadata consistency)."""

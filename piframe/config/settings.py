@@ -52,6 +52,9 @@ class Config:
     download_cache_max_bytes: int = 32 * 1024 * 1024
     max_image_pixels: int = 24_000_000
     max_metadata_bytes: int = 1024 * 1024
+    snapshot_cache_max_bytes: int = 32 * 1024 * 1024
+    snapshot_cache_size: int = 4
+    snapshot_cache_ttl: int = 300
     
     # Server settings
     default_host: str = "0.0.0.0"

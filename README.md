@@ -516,3 +516,13 @@ the physical display and a reboot. Rollback changes the environment only, not
 application code, configuration, or OS packages. Neither installation nor hardware
 operation is proven by tests on a development Mac; run preparation and activation
 on the Pi before considering this deployment verified.
+
+### Consistent photo snapshots
+
+Image metadata returns an opaque `/random-picture/snapshots/<token>` URL bound to
+exact image bytes and metadata, even if another viewer selects a different photo
+or Drive changes the source file. Fetching that URL does not call Drive. Retention
+is bounded by `snapshot_cache_size` (4), `snapshot_cache_max_bytes` (32 MiB,
+including serialized metadata), and `snapshot_cache_ttl` (300 seconds). Expired or
+evicted URLs return 404; request new metadata to obtain a new snapshot. Legacy
+synchronized endpoints still serve the latest retained snapshot.
