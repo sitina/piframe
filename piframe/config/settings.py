@@ -8,7 +8,7 @@ import logging
 import os
 import secrets
 from typing import Optional, Dict, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 
 @dataclass
@@ -21,7 +21,7 @@ class Config:
     drive_token_file: str = "config/token.pickle"
     
     # Weather settings
-    weather_api_key: str = ""
+    weather_api_key: str = field(default="", repr=False)
     weather_location: str = ""
     weather_lat: float = 50.1267  # Default Prague coordinates
     weather_lon: float = 14.4936
@@ -58,7 +58,7 @@ class Config:
     log_file: str = "logs/piframe.log"
     
     # Security settings
-    secret_key: str = ""
+    secret_key: str = field(default="", repr=False)
     
     @classmethod
     def load(cls, config_path: str = "config/config.json") -> 'Config':
@@ -217,6 +217,7 @@ class Config:
         """String representation of configuration (hiding sensitive data)."""
         config_copy = self.to_dict()
         # Hide sensitive information
-        if config_copy.get('weather_api_key'):
-            config_copy['weather_api_key'] = '***hidden***'
+        for name in ('weather_api_key', 'secret_key'):
+            if config_copy.get(name):
+                config_copy[name] = '***hidden***'
         return json.dumps(config_copy, indent=2)

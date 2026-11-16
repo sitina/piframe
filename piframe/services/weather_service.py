@@ -123,7 +123,7 @@ class WeatherService(LoggerMixin):
             return weather_data
             
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Weather API request failed: {e}")
+            self.logger.error("Weather API request failed (%s)", type(e).__name__)
             # Return cached data if available, even if expired
             cached_data = self.cache_manager.get('weather', cache_key)
             if cached_data is not None:
@@ -194,7 +194,7 @@ class WeatherService(LoggerMixin):
             return forecast_data
             
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Forecast API request failed: {e}")
+            self.logger.error("Forecast API request failed (%s)", type(e).__name__)
             # Return cached data if available
             cached_data = self.cache_manager.get('forecast', cache_key)
             if cached_data is not None:

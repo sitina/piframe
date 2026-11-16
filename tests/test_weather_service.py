@@ -91,6 +91,18 @@ class TestWeatherService(unittest.TestCase):
         self.mock_cache_manager.set.assert_called_with('weather', 'current_Prague', mock_weather_data)
         mock_session.get.assert_called_once()
 
+    def test_http_error_does_not_log_api_key(self):
+        from requests import Response
+        response = Response()
+        response.status_code = 401
+        response.url = 'https://example.test/?appid=FAKE_SENTINEL'
+        self.mock_cache_manager.get.return_value = None
+        self.weather_service._session = MagicMock()
+        self.weather_service._session.get.return_value = response
+        with self.assertLogs(self.weather_service.logger, level='ERROR') as logs:
+            self.assertIsNone(self.weather_service.get_current_weather())
+        self.assertNotIn('FAKE_SENTINEL', '\n'.join(logs.output))
+
     def test_get_current_weather_no_api_key(self):
         """Test current weather retrieval without API key."""
         config = Config(weather_api_key="", weather_location="Prague")
