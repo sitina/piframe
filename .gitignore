@@ -83,3 +83,5 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 .nfs*
+# Private runtime credential state
+config/credentials/

@@ -5,7 +5,6 @@ Handles Drive API authentication, file operations, and caching.
 
 import io
 import os
-import pickle
 import random
 import threading
 import time
@@ -16,6 +15,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+
+from .credential_store import CredentialStore, CredentialStoreError
 
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
@@ -55,6 +56,7 @@ class DriveService(LoggerMixin):
         """
         self.config = config
         self.cache_manager = cache_manager or get_cache_manager(config)
+        self.credential_store = CredentialStore(config.drive_token_file)
         self._credentials = None
         self._service = None
         # httplib2 connections cannot be used concurrently by request workers
@@ -94,21 +96,13 @@ class DriveService(LoggerMixin):
         """Load and validate Google Drive credentials."""
         creds = None
         
-        # Load existing token
-        if os.path.exists(self.config.drive_token_file):
-            try:
-                with open(self.config.drive_token_file, 'rb') as token:
-                    creds = pickle.load(token)
-                    self.logger.debug("Loaded existing credentials from token file")
-            except (EOFError, pickle.UnpicklingError, FileNotFoundError) as e:
-                self.logger.warning(f"Error loading token file: {e}")
-                self.logger.info("Removing corrupted token file")
-                try:
-                    os.remove(self.config.drive_token_file)
-                except OSError:
-                    pass
-                creds = None
-        
+        try:
+            creds = self.credential_store.load()
+        except CredentialStoreError as error:
+            self.logger.error("Credential store unavailable (%s); run explicit setup/migration",
+                              type(error).__name__)
+            return None
+
         # Refresh or get new credentials
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
@@ -135,8 +129,7 @@ class DriveService(LoggerMixin):
             
             # Save credentials
             try:
-                with open(self.config.drive_token_file, 'wb') as token:
-                    pickle.dump(creds, token)
+                self.credential_store.save(creds)
                 self.logger.info("Credentials saved successfully")
             except Exception as e:
                 self.logger.error(f"Error saving credentials: {e}")

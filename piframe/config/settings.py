@@ -18,7 +18,7 @@ class Config:
     # Google Drive settings
     album_id: str = ""
     drive_credentials_file: str = "config/client_secret.json"
-    drive_token_file: str = "config/token.pickle"
+    drive_token_file: str = "config/credentials/token.json"
     
     # Weather settings
     weather_api_key: str = field(default="", repr=False)

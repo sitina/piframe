@@ -130,6 +130,21 @@ After pulling updates, activate the virtual environment and run
 start without access to the package index.
 
 
+## Existing OAuth tokens
+
+Runtime credentials are now JSON in `config/credentials/token.json`, with a
+private directory and owner-only file permissions. Runtime never unpickles data.
+For a legacy token whose origin and integrity you trust, migrate it explicitly:
+
+```bash
+python scripts/migrate_token.py --trust-local-pickle
+```
+
+The command preserves the original pickle and refuses to overwrite an existing
+JSON token. Custom legacy `*.pickle` token paths resolve to a `credentials/`
+JSON sibling directory; pass the matching source/destination to the command.
+Custom JSON destinations must be inside a private directory (0700 on Unix).
+
 ## Dependency updates
 
 `requirements.in` declares runtime inputs and security minimums;
@@ -415,7 +430,7 @@ piframe/
 ├── config/                         # Configuration files
 │   ├── config.json                 # Main app configuration
 │   ├── client_secret.json          # Google API credentials (gitignored)
-│   ├── token.pickle                # OAuth token (gitignored)
+│   ├── credentials/token.json      # Private OAuth token (gitignored)
 │   └── systemd/                    # Systemd service files
 ├── piframe/                        # Main Python package
 │   ├── config/

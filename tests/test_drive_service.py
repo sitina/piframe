@@ -3,7 +3,6 @@ Tests for DriveService class from the new modular architecture.
 """
 import unittest
 import io
-import pickle
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock, mock_open
@@ -58,73 +57,33 @@ class TestDriveService(unittest.TestCase):
         self.assertIn('image/jpeg', DriveService.IMAGE_MIME_TYPES)
         self.assertIn('image/png', DriveService.IMAGE_MIME_TYPES)
 
-    @patch('os.path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('pickle.load')
-    def test_load_credentials_existing_valid(self, mock_pickle_load, mock_file, mock_exists):
-        """Test loading existing valid credentials."""
-        mock_creds = MagicMock()
-        mock_creds.valid = True
-        mock_pickle_load.return_value = mock_creds
-        
-        result = self.drive_service._load_credentials()
-        
-        self.assertEqual(result, mock_creds)
-        self.assertEqual(self.drive_service._credentials, mock_creds)
-        mock_file.assert_called_with("token.pickle", 'rb')
+    def test_load_credentials_existing_valid(self):
+        creds = MagicMock(valid=True)
+        with patch.object(self.drive_service.credential_store, 'load', return_value=creds):
+            self.assertIs(self.drive_service._load_credentials(), creds)
 
-    @patch('os.path.exists')
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('pickle.load', side_effect=pickle.UnpicklingError("Corrupted"))
-    @patch('os.remove')
-    def test_load_credentials_corrupted_token(self, mock_remove, mock_pickle_load, mock_file, mock_exists):
-        """Test handling corrupted token file."""
-        # Mock token file exists, credentials file exists
-        mock_exists.side_effect = lambda path: path in ["token.pickle", "client_secret.json"]
-        
-        with patch('piframe.services.drive_service.InstalledAppFlow') as mock_flow:
-            mock_creds = MagicMock()
-            mock_creds.valid = True
-            mock_flow_instance = MagicMock()
-            mock_flow_instance.run_local_server.return_value = mock_creds
-            mock_flow.from_client_secrets_file.return_value = mock_flow_instance
-            
-            result = self.drive_service._load_credentials()
-            
-            # Should remove corrupted token file
-            mock_remove.assert_called_with(self.config.drive_token_file)
-            # Should create new credentials
-            self.assertEqual(result, mock_creds)
+    def test_load_credentials_corrupted_token_is_preserved(self):
+        from piframe.services.credential_store import CredentialStoreError
+        with patch.object(self.drive_service.credential_store, 'load',
+                          side_effect=CredentialStoreError('malformed')), \
+             patch('piframe.services.drive_service.InstalledAppFlow') as flow:
+            self.assertIsNone(self.drive_service._load_credentials())
+            flow.from_client_secrets_file.assert_not_called()
 
-    @patch('os.path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('pickle.load')
-    def test_load_credentials_expired_with_refresh(self, mock_pickle_load, mock_file, mock_exists):
-        """Test refreshing expired credentials."""
-        mock_creds = MagicMock()
-        mock_creds.valid = False
-        mock_creds.expired = True
-        mock_creds.refresh_token = "refresh_token"
-        mock_pickle_load.return_value = mock_creds
-        
-        with patch('piframe.services.drive_service.Request') as mock_request:
-            # After refresh, credentials become valid
-            def refresh_side_effect(request):
-                mock_creds.valid = True
-            
-            mock_creds.refresh.side_effect = refresh_side_effect
-            
-            result = self.drive_service._load_credentials()
-            
-            self.assertEqual(result, mock_creds)
-            mock_creds.refresh.assert_called_once()
+    def test_load_credentials_expired_with_refresh(self):
+        creds = MagicMock(valid=False, expired=True, refresh_token='fixture')
+        creds.refresh.side_effect = lambda request: setattr(creds, 'valid', True)
+        with patch.object(self.drive_service.credential_store, 'load', return_value=creds), \
+             patch.object(self.drive_service.credential_store, 'save') as save, \
+             patch('piframe.services.drive_service.Request'):
+            self.assertIs(self.drive_service._load_credentials(), creds)
+            creds.refresh.assert_called_once()
+            save.assert_called_once_with(creds)
 
-    @patch('os.path.exists', return_value=False)
-    def test_load_credentials_no_credentials_file(self, mock_exists):
-        """Test handling missing credentials file."""
-        result = self.drive_service._load_credentials()
-        
-        self.assertIsNone(result)
+    def test_load_credentials_no_credentials_file(self):
+        with patch.object(self.drive_service.credential_store, 'load', return_value=None), \
+             patch('os.path.exists', return_value=False):
+            self.assertIsNone(self.drive_service._load_credentials())
 
     def test_credentials_property(self):
         """Test credentials property caching."""
