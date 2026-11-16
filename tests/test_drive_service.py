@@ -4,6 +4,8 @@ Tests for DriveService class from the new modular architecture.
 import unittest
 import io
 import pickle
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock, mock_open
 
 # Add parent directory to path for imports
@@ -147,7 +149,64 @@ class TestDriveService(unittest.TestCase):
         result = self.drive_service.service
         
         self.assertEqual(result, mock_service)
-        mock_build.assert_called_with('drive', 'v3', credentials=mock_creds)
+        mock_build.assert_called_with(
+            'drive', 'v3', credentials=mock_creds, cache_discovery=False)
+
+    def test_concurrent_api_operations_do_not_share_transport(self):
+        """Preloads, downloads and metadata requests must not overlap HTTP use."""
+        active = 0
+        maximum = 0
+        counter_lock = threading.Lock()
+        start = threading.Barrier(3)
+        info = {'id': 'photo', 'name': 'photo.jpg', 'mimeType': 'image/jpeg',
+                'webViewLink': 'fixture-view'}
+
+        def transport_call(result):
+            nonlocal active, maximum
+            with counter_lock:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                # Simulate network I/O releasing the GIL while other workers run.
+                threading.Event().wait(0.02)
+                return result
+            finally:
+                with counter_lock:
+                    active -= 1
+
+        api = MagicMock()
+        api.files.return_value.list.return_value.execute.side_effect = (
+            lambda: transport_call({'files': [info]}))
+        api.files.return_value.get.return_value.execute.side_effect = (
+            lambda: transport_call(info))
+        self.drive_service._service = api
+
+        class Downloader:
+            def __init__(self, buffer, request):
+                self.buffer = buffer
+
+            def next_chunk(self):
+                self.buffer.write(b'fixture image')
+                return transport_call((None, True))
+
+        def run(operation):
+            start.wait(timeout=5)
+            return operation()
+
+        with patch('piframe.services.drive_service.MediaIoBaseDownload', Downloader), \
+             patch.object(self.drive_service, 'list_images_in_folder', return_value=[]):
+            with ThreadPoolExecutor(max_workers=3) as pool:
+                futures = [pool.submit(run, operation) for operation in [
+                    lambda: self.drive_service._fetch_all_pages('fixture query'),
+                    lambda: self.drive_service._execute_download('photo'),
+                    lambda: self.drive_service.get_file_by_id('photo'),
+                ]]
+                results = [future.result(timeout=5) for future in futures]
+
+        self.assertEqual(maximum, 1, 'HTTP transport used concurrently')
+        self.assertEqual(results[0], [info])
+        self.assertEqual(results[1].getvalue(), b'fixture image')
+        self.assertEqual(results[2]['id'], 'photo')
 
     def test_service_property_no_credentials(self):
         """Test service property with no credentials."""

@@ -120,6 +120,16 @@ python app.py
 python app.py --port 8080
 ```
 
+Normal runs (`python app.py` and `./scripts/start.sh`) use Waitress, a production
+WSGI server. `--debug` uses Flask's development server and debugger instead.
+The configured log directory is created automatically on first startup.
+
+After pulling updates, activate the virtual environment and run
+`python -m pip install --require-hashes -r requirements.txt` before restarting.
+`start.sh` does not install dependencies, so an already configured frame can
+start without access to the package index.
+
+
 ## Dependency updates
 
 `requirements.in` declares runtime inputs and security minimums;

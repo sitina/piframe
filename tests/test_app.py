@@ -2,6 +2,7 @@
 Tests for main Flask application (refactored architecture)
 """
 import unittest
+import io
 import json
 import tempfile
 import os
@@ -365,43 +366,49 @@ class TestPiFrameApp(unittest.TestCase):
         self.app.image_service.close.assert_called_once()
 
     def test_run(self):
-        """Test running the Flask application"""
-        with patch.object(self.app.app, 'run') as mock_run:
-            self.app.run(host='127.0.0.1', port=5000, debug=False, use_reloader=False)
-            mock_run.assert_called_once_with(
-                host='127.0.0.1',
-                port=5000,
-                debug=False,
-                threaded=True,
-                use_reloader=False
-            )
+        """Normal runs use the production WSGI server."""
+        with patch('waitress.serve') as mock_serve, \
+             patch.object(self.app.app, 'run') as mock_flask_run:
+            self.app.run(host='127.0.0.1', port=5000)
+            mock_serve.assert_called_once_with(
+                self.app.app, host='127.0.0.1', port=5000)
+            mock_flask_run.assert_not_called()
 
     def test_run_with_defaults(self):
-        """Test running with default host/port from config"""
-        with patch.object(self.app.app, 'run') as mock_run:
-            self.app.run(debug=False, use_reloader=False)
-            mock_run.assert_called_once_with(
+        """Use configured host and port with the production server."""
+        with patch('waitress.serve') as mock_serve:
+            self.app.run()
+            mock_serve.assert_called_once_with(
+                self.app.app,
                 host=self.config.default_host,
                 port=self.config.default_port,
-                debug=False,
-                threaded=True,
-                use_reloader=False
             )
 
+    def test_run_debug(self):
+        """Debug mode retains Flask's debugger and optional reloader."""
+        with patch('waitress.serve') as mock_serve, \
+             patch.object(self.app.app, 'run') as mock_flask_run:
+            self.app.run(host='127.0.0.1', port=5000,
+                         debug=True, use_reloader=True)
+            mock_flask_run.assert_called_once_with(
+                host='127.0.0.1', port=5000, debug=True,
+                threaded=True, use_reloader=True)
+            mock_serve.assert_not_called()
+
     def test_run_keyboard_interrupt(self):
-        """Test handling KeyboardInterrupt during run"""
-        with patch.object(self.app.app, 'run', side_effect=KeyboardInterrupt()):
+        """Clean up when the production server is interrupted."""
+        with patch('waitress.serve', side_effect=KeyboardInterrupt()):
             with patch.object(self.app, 'close') as mock_close:
-                self.app.run(debug=False, use_reloader=False)
+                self.app.run()
                 mock_close.assert_called_once()
 
     def test_run_exception(self):
-        """Test handling exceptions during run"""
+        """Propagate server errors after cleaning up resources."""
         test_exception = Exception("Test error")
-        with patch.object(self.app.app, 'run', side_effect=test_exception):
+        with patch('waitress.serve', side_effect=test_exception):
             with patch.object(self.app, 'close') as mock_close:
                 with self.assertRaises(Exception) as context:
-                    self.app.run(debug=False, use_reloader=False)
+                    self.app.run()
                 self.assertEqual(str(context.exception), "Test error")
                 mock_close.assert_called_once()
 
@@ -466,6 +473,27 @@ class TestCreateApp(unittest.TestCase):
 
 class TestMainFunction(unittest.TestCase):
     """Test cases for main() function"""
+
+    def test_missing_production_server_fails_before_starting_services(self):
+        """An existing venv gets upgrade instructions before any API work."""
+        original_import = __import__
+
+        def without_waitress(name, *args, **kwargs):
+            if name == 'waitress':
+                raise ModuleNotFoundError("No module named 'waitress'")
+            return original_import(name, *args, **kwargs)
+
+        with patch('sys.argv', ['app.py']), \
+             patch('app.Config.load') as load_config, \
+             patch('app.PiFrameApp') as create_frame, \
+             patch('sys.stderr', new_callable=io.StringIO) as output, \
+             patch('builtins.__import__', side_effect=without_waitress):
+            self.assertEqual(main(), 1)
+
+        load_config.assert_not_called()
+        create_frame.assert_not_called()
+        self.assertIn('python -m pip install --require-hashes -r requirements.txt',
+                      output.getvalue())
 
     @unittest.skipIf(Flask is None, "Flask not available")
     @patch('app.argparse.ArgumentParser')

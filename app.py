@@ -18,6 +18,19 @@ from piframe.background import BackgroundTaskManager
 from piframe.background.tasks import create_standard_tasks
 
 
+def get_production_server():
+    """Load the production server with an actionable upgrade error."""
+    try:
+        from waitress import serve
+    except ImportError as error:
+        raise RuntimeError(
+            "Waitress is required for normal startup. Activate the virtual "
+            "environment and run: python -m pip install --require-hashes "
+            "-r requirements.txt"
+        ) from error
+    return serve
+
+
 def create_services(config: Config, cache_manager):
     """Create application services at composition time."""
     from piframe.services.weather_service import WeatherService
@@ -278,14 +291,18 @@ class PiFrameApp:
             port = self.config.default_port
         
         try:
-            self.logger.info(f"Starting Flask server on {host}:{port} (debug: {debug})")
-            self.app.run(
-                host=host,
-                port=port,
-                debug=debug,
-                threaded=True,
-                use_reloader=use_reloader
-            )
+            if debug:
+                self.logger.info(f"Starting Flask development server on {host}:{port}")
+                self.app.run(
+                    host=host,
+                    port=port,
+                    debug=True,
+                    threaded=True,
+                    use_reloader=use_reloader
+                )
+            else:
+                self.logger.info(f"Starting Waitress server on {host}:{port}")
+                get_production_server()(self.app, host=host, port=port)
         except KeyboardInterrupt:
             self.logger.info("Application stopped by user")
         except Exception as e:
@@ -311,6 +328,15 @@ def main():
                        help='Logging level (default: INFO)')
     
     args = parser.parse_args()
+
+    # Fail before loading credentials or starting background work after an
+    # upgrade whose new production dependency has not been installed yet.
+    if not args.debug:
+        try:
+            get_production_server()
+        except RuntimeError as error:
+            print(str(error), file=sys.stderr)
+            return 1
     
     # Load configuration
     try:

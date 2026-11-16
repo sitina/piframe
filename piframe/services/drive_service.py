@@ -57,30 +57,38 @@ class DriveService(LoggerMixin):
         self.cache_manager = cache_manager or get_cache_manager(config)
         self._credentials = None
         self._service = None
+        # httplib2 connections cannot be used concurrently by request workers
+        # and background preload tasks. Include client/credential lifecycle.
+        self._api_lock = threading.RLock()
         self._recently_served = []
         self._recently_served_lock = threading.Lock()
         
     @property
     def credentials(self) -> Optional[Credentials]:
         """Get or load Google Drive credentials."""
-        if self._credentials is not None and self._credentials.valid:
-            return self._credentials
+        with self._api_lock:
+            if self._credentials is not None and self._credentials.valid:
+                return self._credentials
         
-        return self._load_credentials()
+            return self._load_credentials()
     
     @property
     def service(self):
         """Get or create Google Drive service."""
-        if self._service is None:
-            creds = self.credentials
-            if creds:
-                self._service = build('drive', 'v3', credentials=creds)
-                self.logger.info("Google Drive service created successfully")
-            else:
-                self.logger.error("Cannot create Drive service without valid credentials")
-                raise RuntimeError("Invalid Google Drive credentials")
+        with self._api_lock:
+            if self._service is None:
+                creds = self.credentials
+                if creds:
+                    # Discovery documents ship with the client; the legacy disk
+                    # cache requires obsolete oauth2client and is unnecessary.
+                    self._service = build(
+                        'drive', 'v3', credentials=creds, cache_discovery=False)
+                    self.logger.info("Google Drive service created successfully")
+                else:
+                    self.logger.error("Cannot create Drive service without valid credentials")
+                    raise RuntimeError("Invalid Google Drive credentials")
         
-        return self._service
+            return self._service
     
     def _load_credentials(self) -> Optional[Credentials]:
         """Load and validate Google Drive credentials."""
@@ -179,38 +187,39 @@ class DriveService(LoggerMixin):
 
     def _fetch_all_pages(self, query: str) -> List[Dict[str, Any]]:
         """Fetch all pages of results from Drive API."""
-        all_items = []
-        page_token = None
-        page_count = 0
+        with self._api_lock:
+            all_items = []
+            page_token = None
+            page_count = 0
 
-        while True:
-            page_count += 1
-            self.logger.debug(f"Fetching page {page_count} from Drive API")
+            while True:
+                page_count += 1
+                self.logger.debug(f"Fetching page {page_count} from Drive API")
 
-            request_params = {
-                'q': query,
-                'pageSize': self.PAGE_SIZE,
-                'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
-            }
-            if page_token:
-                request_params['pageToken'] = page_token
+                request_params = {
+                    'q': query,
+                    'pageSize': self.PAGE_SIZE,
+                    'fields': "nextPageToken, files(id, name, mimeType, webViewLink, createdTime, modifiedTime)"
+                }
+                if page_token:
+                    request_params['pageToken'] = page_token
 
-            results = self.service.files().list(**request_params).execute()
+                results = self.service.files().list(**request_params).execute()
 
-            page_items = results.get('files', [])
-            all_items.extend(page_items)
+                page_items = results.get('files', [])
+                all_items.extend(page_items)
 
-            self.logger.debug(f"Page {page_count}: found {len(page_items)} items (total: {len(all_items)})")
+                self.logger.debug(f"Page {page_count}: found {len(page_items)} items (total: {len(all_items)})")
 
-            page_token = results.get('nextPageToken')
-            if not page_token:
-                break
+                page_token = results.get('nextPageToken')
+                if not page_token:
+                    break
 
-            if page_count >= self.MAX_PAGES:
-                self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
-                break
+                if page_count >= self.MAX_PAGES:
+                    self.logger.warning(f"Pagination safety limit reached after {page_count} pages")
+                    break
 
-        return all_items
+            return all_items
 
     def _process_file_items(self, items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Process raw API items into file info dictionaries."""
@@ -334,23 +343,24 @@ class DriveService(LoggerMixin):
             ValueError: If downloaded file is empty
             Exception: On API errors
         """
-        request = self.service.files().get_media(fileId=file_id)
-        file_buffer = io.BytesIO()
-        downloader = MediaIoBaseDownload(file_buffer, request)
+        with self._api_lock:
+            request = self.service.files().get_media(fileId=file_id)
+            file_buffer = io.BytesIO()
+            downloader = MediaIoBaseDownload(file_buffer, request)
 
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
-            if status:
-                progress = int(status.progress() * 100)
-                if progress % 25 == 0:
-                    self.logger.debug(f"Download progress: {progress}%")
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                if status:
+                    progress = int(status.progress() * 100)
+                    if progress % 25 == 0:
+                        self.logger.debug(f"Download progress: {progress}%")
 
-        file_buffer.seek(0)
-        if file_buffer.getbuffer().nbytes == 0:
-            raise ValueError("Downloaded file is empty")
+            file_buffer.seek(0)
+            if file_buffer.getbuffer().nbytes == 0:
+                raise ValueError("Downloaded file is empty")
 
-        return file_buffer
+            return file_buffer
 
     @log_performance
     def download_file(self, file_id: str, max_retries: int = 3) -> Optional[io.BytesIO]:
@@ -407,8 +417,9 @@ class DriveService(LoggerMixin):
     
     def _reset_service(self) -> None:
         """Reset the Drive service to force new connection."""
-        self._service = None
-        self.logger.info("Drive service reset - will create new connection on next request")
+        with self._api_lock:
+            self._service = None
+            self.logger.info("Drive service reset - will create new connection on next request")
 
     def _should_retry_download(self, error_msg: str) -> Tuple[bool, bool]:
         """
@@ -498,10 +509,11 @@ class DriveService(LoggerMixin):
         
         # If not found in cache, try API call
         try:
-            result = self.service.files().get(
-                fileId=file_id,
-                fields="id, name, mimeType, webViewLink, createdTime, modifiedTime"
-            ).execute()
+            with self._api_lock:
+                result = self.service.files().get(
+                    fileId=file_id,
+                    fields="id, name, mimeType, webViewLink, createdTime, modifiedTime"
+                ).execute()
             
             file_dict = {
                 'id': result['id'],
@@ -541,6 +553,7 @@ class DriveService(LoggerMixin):
     
     def close(self) -> None:
         """Close the service and clean up resources."""
-        self._service = None
-        self._credentials = None
-        self.logger.info("Drive service closed")
+        with self._api_lock:
+            self._service = None
+            self._credentials = None
+            self.logger.info("Drive service closed")
