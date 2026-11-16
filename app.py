@@ -170,16 +170,15 @@ class PiFrameApp:
         Returns:
             tuple: (context_dict, error_response) - context_dict if successful, error_response if failed
         """
-        weather_data = self.weather_service.get_current_weather()
-        if not weather_data:
-            if not require_weather:
-                return self._empty_weather_context(), None
-            return None, Response("Weather data unavailable", status=503, mimetype='text/plain')
-
-        forecast_data = self.weather_service.get_forecast()
-        forecast = self.weather_service.process_forecast_data(forecast_data) if forecast_data else []
-
         try:
+            # Photo HTML never waits for optional external services or files.
+            weather_data = self.weather_service.get_current_weather(
+                cache_only=not require_weather)
+            if not weather_data:
+                raise ValueError("No weather snapshot")
+            forecast_data = self.weather_service.get_forecast(
+                cache_only=not require_weather)
+            forecast = self.weather_service.process_forecast_data(forecast_data)
             context = {
                 'weather_available': True,
                 'temperature': self.weather_service.to_celsius(weather_data['main']['temp']),
@@ -187,8 +186,8 @@ class PiFrameApp:
                 'weather_type': weather_data['weather'][0]['main'],
                 'forecast': forecast[:self.FORECAST_DISPLAY_SLOTS]
             }
-        except (KeyError, IndexError, TypeError) as e:
-            self.logger.error(f"Weather data has unexpected shape: {e}", exc_info=True)
+        except Exception as error:
+            self.logger.warning("Weather unavailable (%s)", type(error).__name__)
             if not require_weather:
                 return self._empty_weather_context(), None
             return None, Response("Weather data unavailable", status=503, mimetype='text/plain')

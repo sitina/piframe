@@ -214,6 +214,18 @@ class TestPiFrameApp(unittest.TestCase):
             self.assertFalse(call_kwargs['weather_available'])
             self.assertEqual(call_kwargs['forecast'], [])
 
+    def test_picture_uses_only_cached_weather_and_isolates_provider_errors(self):
+        self.app.weather_service.get_current_weather.side_effect = RuntimeError('provider failed')
+        response = self.client.get('/picture')
+        self.assertEqual(response.status_code, 200)
+        self.app.weather_service.get_current_weather.assert_called_once_with(cache_only=True)
+
+    def test_picture_isolates_malformed_forecast(self):
+        self.app.weather_service.get_current_weather.return_value = {'main': {}}
+        self.app.weather_service.process_forecast_data.side_effect = IndexError('empty weather')
+        self.assertEqual(self.client.get('/picture').status_code, 200)
+        self.app.weather_service.get_forecast.assert_called_once_with(cache_only=True)
+
     def test_random_picture_route(self):
         """Test random picture route"""
         mock_response = Response(b'image_data', status=200, mimetype='image/jpeg')

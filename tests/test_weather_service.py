@@ -234,6 +234,22 @@ class TestWeatherService(unittest.TestCase):
         self.assertEqual(self.weather_service.process_forecast_data(None), [])
         self.assertEqual(self.weather_service.process_forecast_data({'list': []}), [])
 
+    def test_cached_only_reads_never_fetch_or_open_files(self):
+        self.mock_cache_manager.get.return_value = None
+        with patch('requests.Session', side_effect=AssertionError('network')), \
+             patch('builtins.open', side_effect=AssertionError('file read')):
+            self.assertIsNone(self.weather_service.get_current_weather(cache_only=True))
+            self.assertIsNone(self.weather_service.get_forecast(cache_only=True))
+
+    def test_malformed_forecasts_and_temperatures_are_rejected(self):
+        for value in [None, [], 'bad', {'list': None}, {'list': 12},
+                      {'list': [{'main': {}, 'weather': []}]}]:
+            with self.subTest(value=value):
+                self.assertEqual(self.weather_service.process_forecast_data(value), [])
+        for value in [None, True, '293', float('nan'), float('inf')]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.weather_service.to_celsius(value)
+
     def test_process_forecast_data_invalid_items(self):
         """Test forecast data processing with invalid items."""
         forecast_data = {

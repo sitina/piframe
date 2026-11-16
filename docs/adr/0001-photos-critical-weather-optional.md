@@ -40,6 +40,11 @@ The photo frame route treats weather as an optional overlay:
 - Weather UI is hidden on `/picture` when weather is unavailable.
 - `/weather` remains strict and may return `503`, because weather is the whole
   purpose of that route.
+- `/picture` reads only cached weather and forecast snapshots. A cache miss
+  hides the optional overlay instead of fetching from an API or fallback file.
+  Background refresh (or an explicit `/weather` request) populates the snapshots.
+- Malformed forecast items and invalid temperatures are rejected without
+  escaping the optional-weather boundary.
 - Client refresh timing in `/picture` uses `frontend_refresh_interval` from
   configuration instead of a hardcoded interval.
 - Image loading success is tied to the browser image `onload` event. Image
