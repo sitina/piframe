@@ -485,3 +485,34 @@ piframe/
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+### Raspberry Pi 1 / ARMv6, Bookworm deployment
+
+Use `requirements-pi-bookworm.txt` for 32-bit Raspberry Pi OS Bookworm and
+CPython 3.11. It retains the universal lock's versions, selects explicit
+[piwheels](https://www.piwheels.org/faq.html) binary artifacts for native packages,
+and requires SHA256 hashes. Pure packages use hashed PyPI wheels. Source builds
+are disabled. This profile does **not** apply to Trixie/Python 3.13 or 64-bit OSes.
+`deployment/pi-bookworm-artifacts.json` records artifact provenance and OS packages.
+Regenerate with `venv/bin/python scripts/lock_pi.py` after changing the universal
+lock, then review the artifact hashes and OS dependencies.
+
+On the Pi, after updating this checkout (preserve your local config/credentials):
+
+```bash
+cd ~/piframe
+python3.11 -c 'import json; print(" ".join(json.load(open("deployment/pi-bookworm-artifacts.json"))["apt_packages"]))'
+# Install exactly the package names printed above with sudo apt install.
+/usr/bin/python3.11 scripts/deploy_pi.py prepare
+# Run the activation command printed only after installation and smoke tests pass.
+```
+
+Preparation leaves the running service and its environment alone. Activation
+requires the existing `piframe.service` to run this checkout's `scripts/start.sh`;
+it switches `venv-current` atomically, restarts the service, and checks a real
+photo plus native image/chart processing. Failure restores the previous environment
+and restarts it. Keep the old environment and SD backup until you have checked
+the physical display and a reboot. Rollback changes the environment only, not
+application code, configuration, or OS packages. Neither installation nor hardware
+operation is proven by tests on a development Mac; run preparation and activation
+on the Pi before considering this deployment verified.

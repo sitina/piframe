@@ -85,3 +85,7 @@ $RECYCLE.BIN/
 .nfs*
 # Private runtime credential state
 config/credentials/
+# Candidate deployment environments and atomic activation links
+.venvs/
+venv-current
+.venv-switch-*
