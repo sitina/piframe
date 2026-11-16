@@ -11,8 +11,8 @@ import time
 from typing import List, Dict, Any, Optional, Tuple
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
@@ -21,6 +21,14 @@ from .credential_store import CredentialStore, CredentialStoreError
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
 from ..utils.logging import LoggerMixin, log_performance
+
+
+class AuthenticationRequired(RuntimeError):
+    """An operator must explicitly authenticate; runtime never opens OAuth UI."""
+
+
+class CredentialRefreshUnavailable(RuntimeError):
+    """A transient provider failure; retain the persisted refresh token."""
 
 
 class DriveService(LoggerMixin):
@@ -93,50 +101,35 @@ class DriveService(LoggerMixin):
             return self._service
     
     def _load_credentials(self) -> Optional[Credentials]:
-        """Load and validate Google Drive credentials."""
-        creds = None
-        
+        """Load or refresh credentials without interactive authentication."""
         try:
             creds = self.credential_store.load()
         except CredentialStoreError as error:
-            self.logger.error("Credential store unavailable (%s); run explicit setup/migration",
-                              type(error).__name__)
-            return None
-
-        # Refresh or get new credentials
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    self.logger.info("Refreshing expired credentials")
-                    creds.refresh(Request())
-                except Exception as e:
-                    self.logger.error(f"Error refreshing credentials: {e}")
-                    creds = None
-            
-            if not creds:
-                if not os.path.exists(self.config.drive_credentials_file):
-                    self.logger.error(f"Credentials file not found: {self.config.drive_credentials_file}")
-                    return None
-                
-                try:
-                    self.logger.info("Starting OAuth flow for new credentials")
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        self.config.drive_credentials_file, self.SCOPES)
-                    creds = flow.run_local_server(port=0)
-                except Exception as e:
-                    self.logger.error(f"Error during OAuth flow: {e}")
-                    return None
-            
-            # Save credentials
+            raise AuthenticationRequired(
+                "Credential store unavailable; run explicit setup or trusted migration") from error
+        if creds is None:
+            raise AuthenticationRequired('Run python scripts/authenticate.py before starting the frame')
+        if not creds.valid:
+            if not creds.refresh_token:
+                raise AuthenticationRequired('Credentials have no refresh token; authenticate again')
+            try:
+                creds.refresh(Request())
+            except RefreshError as error:
+                if error.retryable:
+                    raise CredentialRefreshUnavailable('Credential refresh temporarily unavailable') from error
+                raise AuthenticationRequired('Credentials rejected; authenticate again') from error
+            except Exception as error:
+                raise CredentialRefreshUnavailable('Credential refresh temporarily unavailable') from error
+            if not creds.valid:
+                raise AuthenticationRequired('Refresh did not produce valid credentials')
             try:
                 self.credential_store.save(creds)
-                self.logger.info("Credentials saved successfully")
-            except Exception as e:
-                self.logger.error(f"Error saving credentials: {e}")
-        
+            except CredentialStoreError:
+                # The valid in-memory token remains useful; do not destroy the old file.
+                self.logger.error('Refreshed credentials could not be persisted')
         self._credentials = creds
         return creds
-    
+
     @log_performance
     def list_images_in_folder(self, folder_id: Optional[str] = None,
                             force_refresh: bool = False,

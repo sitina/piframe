@@ -132,6 +132,14 @@ start without access to the package index.
 
 ## Existing OAuth tokens
 
+Normal startup never opens a browser or waits for an OAuth callback. For new or
+revoked credentials, explicitly run `python scripts/authenticate.py` on a machine
+with a browser. The callback listens only on loopback and times out after three
+minutes. For SSH setup, forward local port 8085 to the frame's loopback port 8085
+and run the command on the frame with `--no-browser`, then open its printed URL
+in the forwarded browser session. Keep the same Google Drive client credentials.
+Transient refresh failures retain the saved token and require no new login.
+
 Runtime credentials are now JSON in `config/credentials/token.json`, with a
 private directory and owner-only file permissions. Runtime never unpickles data.
 For a legacy token whose origin and integrity you trust, migrate it explicitly:

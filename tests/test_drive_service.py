@@ -12,7 +12,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from piframe.services.drive_service import DriveService
+from piframe.services.drive_service import DriveService, AuthenticationRequired, CredentialRefreshUnavailable
 from piframe.config.settings import Config
 from piframe.models.cache import CacheManager
 
@@ -66,8 +66,9 @@ class TestDriveService(unittest.TestCase):
         from piframe.services.credential_store import CredentialStoreError
         with patch.object(self.drive_service.credential_store, 'load',
                           side_effect=CredentialStoreError('malformed')), \
-             patch('piframe.services.drive_service.InstalledAppFlow') as flow:
-            self.assertIsNone(self.drive_service._load_credentials())
+             patch('google_auth_oauthlib.flow.InstalledAppFlow') as flow:
+            with self.assertRaises(AuthenticationRequired):
+                self.drive_service._load_credentials()
             flow.from_client_secrets_file.assert_not_called()
 
     def test_load_credentials_expired_with_refresh(self):
@@ -83,7 +84,8 @@ class TestDriveService(unittest.TestCase):
     def test_load_credentials_no_credentials_file(self):
         with patch.object(self.drive_service.credential_store, 'load', return_value=None), \
              patch('os.path.exists', return_value=False):
-            self.assertIsNone(self.drive_service._load_credentials())
+            with self.assertRaises(AuthenticationRequired):
+                self.drive_service._load_credentials()
 
     def test_credentials_property(self):
         """Test credentials property caching."""
@@ -94,6 +96,22 @@ class TestDriveService(unittest.TestCase):
         result = self.drive_service.credentials
         
         self.assertEqual(result, mock_creds)
+
+    def test_refresh_failure_never_starts_oauth_or_overwrites_token(self):
+        from google.auth.exceptions import RefreshError
+        for error, expected in [(OSError('offline'), CredentialRefreshUnavailable),
+                                (RefreshError('revoked'), AuthenticationRequired),
+                                (RefreshError('busy', retryable=True), CredentialRefreshUnavailable)]:
+            creds = MagicMock(valid=False, refresh_token='fixture')
+            creds.refresh.side_effect = error
+            with self.subTest(error=type(error).__name__), \
+                 patch.object(self.drive_service.credential_store, 'load', return_value=creds), \
+                 patch.object(self.drive_service.credential_store, 'save') as save, \
+                 patch('google_auth_oauthlib.flow.InstalledAppFlow') as flow:
+                with self.assertRaises(expected):
+                    self.drive_service._load_credentials()
+                save.assert_not_called()
+                flow.from_client_secrets_file.assert_not_called()
 
     @patch('piframe.services.drive_service.build')
     def test_service_property(self, mock_build):
