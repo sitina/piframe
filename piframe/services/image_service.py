@@ -153,11 +153,8 @@ class ImageService(LoggerMixin):
             # A checkpoint includes metadata even when this response did not request it.
             if self.config.last_photo_enabled:
                 try:
-                    metadata = prepared.metadata_info
-                    if metadata is None:
-                        metadata = self.get_image_metadata(prepared.image_info['id'], prepared.image_data, prepared.image_info)
-                    checkpoint = PreparedImage(prepared.image_info, prepared.image_data, prepared.image_hash, metadata)
-                    self.last_photo.save(checkpoint)
+                    self.last_photo.save(prepared, metadata_factory=lambda: self.get_image_metadata(
+                        prepared.image_info['id'], prepared.image_data, prepared.image_info))
                 except Exception as failure:
                     self.logger.warning('Photo checkpoint write failed (%s)', type(failure).__name__)
             return prepared, error

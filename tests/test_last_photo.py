@@ -34,7 +34,7 @@ class TestLastPhoto(unittest.TestCase):
     def test_atomic_failure_preserves_previous_photo_and_cleans_temporary(self):
         self.store.save(self.prepared)
         original = self.store.path.read_bytes()
-        with patch.object(self.store, '_last_saved', None), patch('piframe.services.last_photo_store.os.replace', side_effect=OSError('fixture failure')):
+        with patch.object(self.store, '_last_attempt', None), patch('piframe.services.last_photo_store.os.replace', side_effect=OSError('fixture failure')):
             with self.assertRaises(OSError):
                 self.store.save(self.prepared)
         self.assertEqual(self.store.path.read_bytes(), original)
@@ -52,6 +52,29 @@ class TestLastPhoto(unittest.TestCase):
             self.assertEqual(self.store.path.read_bytes(), original)
             clock.return_value = 401
             self.assertTrue(self.store.save(self.prepared))
+
+    def test_unwritable_parent_backs_off_before_decode_or_metadata(self):
+        metadata = Mock()
+        with patch.object(self.store, '_private_parent', side_effect=OSError('read-only fixture')) as parent, \
+                patch.object(self.store.processor, 'verify_decodable') as decode:
+            with self.assertRaises(OSError):
+                self.store.save(self.prepared, metadata_factory=metadata)
+            self.assertFalse(self.store.save(self.prepared, metadata_factory=metadata))
+            parent.assert_called_once()
+            decode.assert_not_called()
+            metadata.assert_not_called()
+
+    def test_failed_replace_decodes_only_once_during_backoff(self):
+        self.prepared.metadata_info = None
+        metadata = Mock(return_value={})
+        with patch('piframe.services.last_photo_store.os.replace', side_effect=OSError('full fixture')), \
+                patch.object(self.store.processor, 'verify_decodable', wraps=self.store.processor.verify_decodable) as decode:
+            with self.assertRaises(OSError):
+                self.store.save(self.prepared, metadata_factory=metadata)
+            self.assertFalse(self.store.save(self.prepared, metadata_factory=metadata))
+            decode.assert_called_once()
+            metadata.assert_called_once()
+        self.assertEqual(list(self.store.path.parent.glob('.photo-*')), [])
 
     @patch('piframe.services.last_photo_store.time.time', return_value=1001)
     def test_corrupt_oversized_expired_future_or_wrong_album_is_not_reused(self, clock):
@@ -80,7 +103,7 @@ class TestLastPhoto(unittest.TestCase):
         self.store.save(self.prepared)
         original = self.store.path.read_bytes()
         self.prepared.image_data = io.BytesIO(self.data[:-25])
-        with patch.object(self.store, '_last_saved', None):
+        with patch.object(self.store, '_last_attempt', None):
             with self.assertRaises(ValueError):
                 self.store.save(self.prepared)
         self.assertEqual(self.store.path.read_bytes(), original)

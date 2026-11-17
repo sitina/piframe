@@ -24,7 +24,7 @@ class LastPhotoStore:
         self.path = Path(config.last_photo_file)
         self.processor = ImageProcessor(config)
         self._lock = threading.RLock()
-        self._last_saved = None
+        self._last_attempt = None
         for value in (config.last_photo_max_age, config.last_photo_write_interval):
             if (isinstance(value, bool) or not isinstance(value, (int, float)) or
                     not math.isfinite(value) or value <= 0):
@@ -38,31 +38,38 @@ class LastPhotoStore:
         if os.name == 'posix' and stat.S_IMODE(self.path.parent.stat().st_mode) & 0o077:
             raise ValueError('Photo checkpoint directory must be private')
 
-    def save(self, prepared):
+    def save(self, prepared, metadata_factory=None):
         if not self.config.last_photo_enabled:
             return False
-        data = prepared.image_data.getvalue()
-        image_format, _ = self.processor.inspect(io.BytesIO(data))
-        # MIME comes from inspected content; source names never become paths.
-        name = ''.join(c for c in str(prepared.image_info.get('name', 'photo')) if ord(c) >= 32 and ord(c) != 127)[:256]
-        info = {'id': str(prepared.image_info['id'])[:1024], 'name': name or 'photo',
-                'type': {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'GIF': 'image/gif',
-                         'BMP': 'image/bmp', 'WEBP': 'image/webp'}[image_format]}
-        header = json.dumps({'schema': 1, 'album_id': self.config.album_id, 'saved_at': time.time(), 'info': info,
-                             'metadata': prepared.metadata_info or {},
-                             'sha256': hashlib.sha256(data).hexdigest()}, allow_nan=False).encode()
-        if len(header) > self.config.max_metadata_bytes:
-            raise ValueError('Photo checkpoint metadata exceeds budget')
         with self._lock:
-            if (self._last_saved is not None and
-                    time.monotonic() - self._last_saved < self.config.last_photo_write_interval):
+            now = time.monotonic()
+            if (self._last_attempt is not None and
+                    now - self._last_attempt < self.config.last_photo_write_interval):
                 return False
-            self.processor.verify_decodable(io.BytesIO(data))
+            # Failed attempts back off too, before metadata parsing or decoding.
+            self._last_attempt = now
+            self._private_parent(create=True)
             temporary = None
             try:
-                self._private_parent(create=True)
+                # Fail early for read-only/full storage, before expensive image work.
                 descriptor, temporary = tempfile.mkstemp(dir=self.path.parent, prefix='.photo-')
                 with os.fdopen(descriptor, 'wb') as stream:
+                    data = prepared.image_data.getvalue()
+                    image_format, _ = self.processor.verify_decodable(io.BytesIO(data))
+                    name = ''.join(c for c in str(prepared.image_info.get('name', 'photo'))
+                                   if ord(c) >= 32 and ord(c) != 127)[:256]
+                    info = {'id': str(prepared.image_info['id'])[:1024], 'name': name or 'photo',
+                            'type': {'JPEG': 'image/jpeg', 'PNG': 'image/png', 'GIF': 'image/gif',
+                                     'BMP': 'image/bmp', 'WEBP': 'image/webp'}[image_format]}
+                    metadata = prepared.metadata_info
+                    if metadata is None and metadata_factory is not None:
+                        metadata = metadata_factory()
+                    header = json.dumps({'schema': 1, 'album_id': self.config.album_id,
+                                         'saved_at': time.time(), 'info': info,
+                                         'metadata': metadata or {},
+                                         'sha256': hashlib.sha256(data).hexdigest()}, allow_nan=False).encode()
+                    if len(header) > self.config.max_metadata_bytes:
+                        raise ValueError('Photo checkpoint metadata exceeds budget')
                     stream.write(MAGIC)
                     stream.write(struct.pack('!I', len(header)))
                     stream.write(header)
@@ -77,7 +84,6 @@ class LastPhotoStore:
                         os.fsync(directory)
                     finally:
                         os.close(directory)
-                self._last_saved = time.monotonic()
                 return True
             finally:
                 if temporary is not None:

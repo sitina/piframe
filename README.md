@@ -614,8 +614,9 @@ the browser retains the displayed photo. Fallback does not renew the saved times
 - `last_photo_enabled`: true; set false to disable disk persistence and reuse.
 - `last_photo_file`: `state/last-photo.bin` (parent directory must be private).
 - `last_photo_max_age`: 604800 seconds (7 days), measured using the system clock.
-- `last_photo_write_interval`: 300 seconds; at most one successful checkpoint
-  per five minutes per process, limiting SD writes. It may therefore be older
+- `last_photo_write_interval`: 300 seconds; at most one checkpoint attempt
+  per five minutes per process, limiting SD writes and repeated decoding when
+  storage is unavailable. Storage is checked before image decoding. It may therefore be older
   than the currently displayed photo.
 
 Corrupt, oversized, expired, future-dated, or different-album checkpoints are
