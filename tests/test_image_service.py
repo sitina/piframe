@@ -24,6 +24,7 @@ class TestImageService(unittest.TestCase):
     def setUp(self):
         """Set up test fixtures."""
         self.config = Config(
+            last_photo_enabled=False,
             download_cache_ttl=60,
             metadata_cache_size=20
         )
@@ -515,7 +516,7 @@ class TestImageService(unittest.TestCase):
         
         self.assertIsInstance(result, Response)
         self.assertEqual(result.status_code, 500)
-        self.assertIn(b'Internal server error', result.data)
+        self.assertIn(b'Error downloading image', result.data)
 
     def test_serve_image_by_id_exception_handling(self):
         """Test exception handling in serve_image_by_id."""

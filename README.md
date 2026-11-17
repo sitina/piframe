@@ -550,3 +550,30 @@ cache write, not extensions renewed on each stale read. Cached-only photo weathe
 may use the same bounded fallback. Cleanup removes entries when retention ends;
 entry-count and byte budgets still apply throughout. In-memory ages use a
 monotonic clock so wall-clock adjustments cannot extend their lifetime.
+
+### Offline photo checkpoints
+
+After a valid live photo, the frame periodically checkpoints its bytes and
+metadata to `state/last-photo.bin`. This private directory/file uses modes
+0700/0600. One bounded container is flushed and atomically replaced, so an
+interrupted write preserves the previous checkpoint. SHA256, schema, album ID,
+MIME, byte/pixel limits, and a decoded image frame are checked before reuse.
+No credentials or executable serialized objects are stored in this file.
+
+A fresh process serves a valid checkpoint before contacting Drive, so a stalled
+network cannot block its initial photo. Subsequent refreshes try live data while
+the browser retains the displayed photo. Fallback does not renew the saved timestamp. Defaults:
+
+- `last_photo_enabled`: true; set false to disable disk persistence and reuse.
+- `last_photo_file`: `state/last-photo.bin` (parent directory must be private).
+- `last_photo_max_age`: 604800 seconds (7 days), measured using the system clock.
+- `last_photo_write_interval`: 300 seconds; at most one successful checkpoint
+  per five minutes per process, limiting SD writes. It may therefore be older
+  than the currently displayed photo.
+
+Corrupt, oversized, expired, future-dated, or different-album checkpoints are
+ignored. Correct system time is required for age checks, especially after an
+offline Pi reboot. The image/metadata budgets also apply to checkpoints. Storage
+failures are logged without interrupting live photo serving. Already displayed
+photos and already-issued snapshot URLs follow their existing browser/retention
+behavior; this age policy controls reading the durable fallback.

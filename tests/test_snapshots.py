@@ -11,7 +11,7 @@ from piframe.services.image_service import ImageService
 
 class TestSnapshots(unittest.TestCase):
     def setUp(self):
-        self.config = Config(snapshot_cache_size=2)
+        self.config = Config(snapshot_cache_size=2, last_photo_enabled=False)
         self.drive = Mock()
         self.service = ImageService(self.config, self.drive, CacheManager(self.config))
         self.addCleanup(self.service.close)

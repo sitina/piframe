@@ -92,6 +92,7 @@ class TestEndToEnd(unittest.TestCase):
     def setUp(self):
         reset_cache_manager()
         self.frame = PiFrameApp(Config(
+            last_photo_enabled=False,
             album_id="fixture-album", weather_api_key="fixture-key",
             weather_location="Prague", secret_key="fixture-secret",
             weather_file_fallback="/nonexistent-piframe-fixture-forecast.json",

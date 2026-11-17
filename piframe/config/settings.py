@@ -61,6 +61,12 @@ class Config:
     snapshot_cache_size: int = 4
     snapshot_cache_ttl: int = 300
     
+    # Durable offline checkpoint (private state, no credentials).
+    last_photo_enabled: bool = True
+    last_photo_file: str = 'state/last-photo.bin'
+    last_photo_max_age: int = 7 * 24 * 3600
+    last_photo_write_interval: int = 300
+
     # Server settings
     default_host: str = "0.0.0.0"
     default_port: int = 5001

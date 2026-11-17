@@ -89,3 +89,5 @@ config/credentials/
 .venvs/
 venv-current
 .venv-switch-*
+# Private durable photo checkpoints
+state/

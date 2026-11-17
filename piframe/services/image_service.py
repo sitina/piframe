@@ -9,6 +9,7 @@ import io
 import json
 import itertools
 import time
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, TYPE_CHECKING
 
@@ -19,6 +20,7 @@ from ..models.cache import CacheManager, get_cache_manager
 from ..utils import metadata as image_metadata
 from .image_processor import ImageProcessor
 from .snapshots import SnapshotStore
+from .last_photo_store import LastPhotoStore
 from ..utils.logging import LoggerMixin, log_performance
 
 if TYPE_CHECKING:
@@ -99,6 +101,9 @@ class ImageService(LoggerMixin):
         # Synchronized image state for metadata consistency
         self._sync_state = SynchronizedImageState()
         self.snapshots = SnapshotStore(config)
+        self.last_photo = LastPhotoStore(config)
+        self._bootstrap_lock = threading.Lock()
+        self._bootstrap_checked = False
 
         # How long a synchronized image stays valid before we pick a new one
         self.SYNC_TIMEOUT_SECONDS = 60
@@ -118,7 +123,47 @@ class ImageService(LoggerMixin):
         """Generate unique correlation ID for tracking sync operations."""
         return f"sync_{int(time.time())}_{next(self._correlation_counter)}"
 
-    def _prepare_random_image(self, avoid_recent: bool = True,
+    def _load_checkpoint(self):
+        try:
+            checkpoint = self.last_photo.load()
+            if checkpoint is not None:
+                info, data, metadata = checkpoint
+                buffer = io.BytesIO(data)
+                return PreparedImage(info, buffer, self._generate_image_hash(buffer), metadata)
+        except Exception as failure:
+            self.logger.warning('Photo checkpoint unavailable (%s)', type(failure).__name__)
+        return None
+
+    def _prepare_random_image(self, avoid_recent=True, extract_metadata=True, clear_cache=False):
+        # A restarted offline frame must not wait behind Drive's network deadline.
+        # Checkpoint I/O happens once before any live preparation on this instance.
+        with self._bootstrap_lock:
+            if not self._bootstrap_checked:
+                self._bootstrap_checked = True
+                checkpoint = self._load_checkpoint()
+                if checkpoint is not None:
+                    return checkpoint, None
+        try:
+            prepared, error = self._prepare_live_image(avoid_recent, extract_metadata, clear_cache)
+        except Exception as failure:
+            self.logger.warning('Live image unavailable (%s)', type(failure).__name__)
+            prepared, error = None, ImagePrepareError.DOWNLOAD_FAILED
+        if prepared is not None:
+            # A checkpoint includes metadata even when this response did not request it.
+            if self.config.last_photo_enabled:
+                try:
+                    metadata = prepared.metadata_info
+                    if metadata is None:
+                        metadata = self.get_image_metadata(prepared.image_info['id'], prepared.image_data, prepared.image_info)
+                    checkpoint = PreparedImage(prepared.image_info, prepared.image_data, prepared.image_hash, metadata)
+                    self.last_photo.save(checkpoint)
+                except Exception as failure:
+                    self.logger.warning('Photo checkpoint write failed (%s)', type(failure).__name__)
+            return prepared, error
+        checkpoint = self._load_checkpoint()
+        return (checkpoint, None) if checkpoint is not None else (None, error)
+
+    def _prepare_live_image(self, avoid_recent: bool = True,
                               extract_metadata: bool = True,
                               clear_cache: bool = False
                               ) -> tuple[Optional['PreparedImage'], Optional[ImagePrepareError]]:
@@ -199,7 +244,7 @@ class ImageService(LoggerMixin):
 
             # Create Flask response
             response = self._create_image_response(
-                prepared.image_info, prepared.image_data, prepared.metadata_info
+                prepared.image_info, prepared.image_data, prepared.metadata_info if include_metadata else None
             )
 
             # Add synchronization headers

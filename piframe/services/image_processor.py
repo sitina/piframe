@@ -48,3 +48,13 @@ class ImageProcessor:
             if image is not None:
                 image.close()
             stream.close()
+
+    def verify_decodable(self, data):
+        """Decode one bounded frame before trusting an offline checkpoint."""
+        result = self.inspect(data)
+        try:
+            with Image.open(io.BytesIO(data.getvalue()), formats=self.FORMATS) as image:
+                image.load()
+        except (OSError, SyntaxError, Image.DecompressionBombError) as error:
+            raise ImageRejected('Image frame cannot be decoded') from error
+        return result
