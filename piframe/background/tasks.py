@@ -302,6 +302,7 @@ def create_standard_tasks(weather_service, drive_service, image_service, config)
     def refresh_weather():
         weather_service.get_current_weather(force_refresh=True)
         weather_service.get_forecast(force_refresh=True)
+        weather_service.generate_forecast_chart(force_refresh=True)
 
     task_manager.add_task(
         name="weather_refresh",

@@ -51,6 +51,19 @@ class TestPiFrameApp(unittest.TestCase):
         if hasattr(self, 'app'):
             self.app.close()
 
+    def test_cached_weather_routes_never_fetch_or_generate(self):
+        self.mock_weather_service.get_current_weather.return_value = None
+        self.app.cache_manager.get.return_value = b'cached-chart'
+        response = self.client.get('/weather/cached-overlay')
+        self.assertEqual(response.status_code, 200)
+        self.mock_weather_service.get_current_weather.assert_called_once_with(cache_only=True)
+        self.mock_weather_service.get_forecast.assert_not_called()
+        self.mock_weather_service.generate_forecast_chart.assert_not_called()
+        chart = self.client.get('/weather/cached-chart.png')
+        self.assertEqual(chart.data, b'cached-chart')
+        self.app.cache_manager.get.return_value = None
+        self.assertEqual(self.client.get('/weather/cached-chart.png').status_code, 404)
+
     def test_init(self):
         """Test PiFrameApp initialization"""
         self.assertIsNotNone(self.app.app)

@@ -526,3 +526,16 @@ is bounded by `snapshot_cache_size` (4), `snapshot_cache_max_bytes` (32 MiB,
 including serialized metadata), and `snapshot_cache_ttl` (300 seconds). Expired or
 evicted URLs return 404; request new metadata to obtain a new snapshot. Legacy
 synchronized endpoints still serve the latest retained snapshot.
+
+### Browser refresh regression checks
+
+The photo page owns one refresh controller and keeps a decoded photo visible
+through failed or timed-out replacements. Weather HTML and charts refresh from
+memory-only endpoints; the background worker prepares chart updates.
+
+The optional browser suite uses actual templates and JavaScript with fixture
+responses (no Google or weather credentials): install `playwright@1.65.1` into a
+temporary npm prefix, install its Chromium browser, and run
+`NODE_PATH=<prefix>/node_modules node tests/browser/frame.cjs` from the repository.
+Set `PIFRAME_TEST_PYTHON` if the test interpreter is not `venv/bin/python`, and
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing Chromium binary.

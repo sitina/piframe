@@ -3,6 +3,7 @@ Refactored PiFrame Flask application.
 Clean separation of concerns using service architecture.
 """
 
+import hashlib
 import argparse
 import os
 import signal
@@ -134,6 +135,19 @@ class PiFrameApp:
             """Get synchronized image and metadata in atomic operation."""
             return jsonify(self.image_service.get_synchronized_metadata())
         
+        @self.app.route("/weather/cached-overlay")
+        def cached_weather_overlay():
+            context, _ = self._get_weather_context(require_weather=False)
+            context.update(self._cached_chart_context())
+            response = Response(render_template('_weather_overlay.html', **context), mimetype='text/html')
+            response.headers['Cache-Control'] = 'no-store'
+            return response
+
+        @self.app.route("/weather/cached-chart.png")
+        def cached_weather_chart():
+            data = self.cache_manager.get('chart', 'forecast_chart')
+            return Response(data, mimetype='image/png') if data else Response(status=404)
+
         @self.app.route("/weather/forecast.png")
         def forecast_chart():
             """Weather forecast chart."""
@@ -205,12 +219,18 @@ class PiFrameApp:
             return error
         return render_template('weather.html', **context)
 
+    def _cached_chart_context(self):
+        data = self.cache_manager.get('chart', 'forecast_chart')
+        return {'chart_available': isinstance(data, bytes) and bool(data),
+                'chart_version': hashlib.sha256(data).hexdigest()[:16] if isinstance(data, bytes) else ''}
+
     def get_picture(self):
         """Render picture template with weather overlay."""
         context, error = self._get_weather_context(require_weather=False)
         if error:
             return error
         context['refresh_interval'] = self.config.frontend_refresh_interval
+        context.update(self._cached_chart_context())
         return render_template('picture.html', **context)
 
     def get_status(self):

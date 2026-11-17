@@ -38,12 +38,11 @@
         var elem = document.documentElement;
 
         function openFullscreen() {
-            if (elem.requestFullscreen) {
-                elem.requestFullscreen();
-            } else if (elem.webkitRequestFullscreen) { /* Safari */
-                elem.webkitRequestFullscreen();
-            } else if (elem.msRequestFullscreen) { /* IE11 */
-                elem.msRequestFullscreen();
+            var request = elem.requestFullscreen || elem.webkitRequestFullscreen || elem.msRequestFullscreen;
+            if (request) {
+                var result = request.call(elem);
+                // Browsers may require an explicit click before allowing fullscreen.
+                if (result && result.catch) { result.catch(function () {}); }
             }
         }
 
@@ -61,12 +60,6 @@
             openFullscreen();
         });
 
-        function reloadIFrame() {
-            var timestamp = new Date().getTime();
-            document.getElementById("picFrame").src = "../picture?t=" + timestamp;
-        }
-
-        window.setInterval(reloadIFrame, {{ refresh_interval * 1000 }});
     </script>
 </head>
 
