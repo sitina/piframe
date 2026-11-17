@@ -8,7 +8,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from google_auth_oauthlib.flow import InstalledAppFlow
 from piframe.config import Config
-from piframe.services.credential_store import CredentialStore
+from piframe.services.credential_store import CredentialStore, CredentialStoreError
 from piframe.services.drive_service import DriveService
 
 
@@ -28,9 +28,16 @@ def main():
             access_type='offline', prompt='consent')
         if not credentials.valid or not isinstance(credentials.refresh_token, str) or not credentials.refresh_token.strip():
             raise ValueError('Unattended operation requires valid refreshable credentials')
-        CredentialStore(config.drive_token_file).save(credentials)
     except Exception as error:
         print(f'Authentication failed ({type(error).__name__}); inspect setup and retry.', file=sys.stderr)
+        return 1
+    try:
+        CredentialStore(config.drive_token_file).save(credentials)
+    except CredentialStoreError as error:
+        print(f'Credentials obtained but could not be saved: {error}', file=sys.stderr)
+        return 1
+    except Exception as error:
+        print(f'Credentials obtained but could not be saved ({type(error).__name__}); check destination storage.', file=sys.stderr)
         return 1
     print('Credentials saved. The frame can now start unattended.')
     return 0

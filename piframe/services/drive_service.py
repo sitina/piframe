@@ -17,7 +17,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 from .image_processor import BoundedImageBuffer, ImageRejected
-from .credential_store import CredentialStore, CredentialStoreError
+from .credential_store import CredentialStore, CredentialStoreError, LegacyTokenError
 
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
@@ -105,9 +105,8 @@ class DriveService(LoggerMixin):
         """Load or refresh credentials without interactive authentication."""
         try:
             creds = self.credential_store.load()
-        except CredentialStoreError as error:
-            raise AuthenticationRequired(
-                "Credential store unavailable; run explicit setup or trusted migration") from error
+        except LegacyTokenError as error:
+            raise AuthenticationRequired('Legacy token requires explicit trusted migration or OAuth setup') from error
         if creds is None:
             raise AuthenticationRequired('Run python scripts/authenticate.py before starting the frame')
         if not creds.valid:
@@ -125,9 +124,9 @@ class DriveService(LoggerMixin):
                 raise AuthenticationRequired('Refresh did not produce valid credentials')
             try:
                 self.credential_store.save(creds)
-            except CredentialStoreError:
+            except CredentialStoreError as error:
                 # The valid in-memory token remains useful; do not destroy the old file.
-                self.logger.error('Refreshed credentials could not be persisted')
+                self.logger.error('Refreshed credentials could not be persisted: %s', error)
         self._credentials = creds
         return creds
 

@@ -68,9 +68,16 @@ class TestDriveService(unittest.TestCase):
         with patch.object(self.drive_service.credential_store, 'load',
                           side_effect=CredentialStoreError('malformed')), \
              patch('google_auth_oauthlib.flow.InstalledAppFlow') as flow:
-            with self.assertRaises(AuthenticationRequired):
+            with self.assertRaises(CredentialStoreError):
                 self.drive_service._load_credentials()
             flow.from_client_secrets_file.assert_not_called()
+
+    def test_permission_failure_preserves_actionable_remedy(self):
+        from piframe.services.credential_store import CredentialPermissionError
+        error = CredentialPermissionError('run chmod 600 fixture-token.json')
+        with patch.object(self.drive_service.credential_store, 'load', side_effect=error):
+            with self.assertRaisesRegex(CredentialPermissionError, 'chmod 600'):
+                self.drive_service._load_credentials()
 
     def test_load_credentials_expired_with_refresh(self):
         creds = MagicMock(valid=False, expired=True, refresh_token='fixture')

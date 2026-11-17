@@ -1,5 +1,9 @@
 import io
 import unittest
+import os
+import tempfile
+from pathlib import Path
+from google.oauth2.credentials import Credentials
 from unittest.mock import Mock, patch
 
 from scripts import authenticate
@@ -44,3 +48,24 @@ class TestAuthenticateCommand(unittest.TestCase):
             self.assertEqual(authenticate.main(), 1)
             store.assert_not_called()
             self.assertNotIn('Credentials saved', output.getvalue())
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX permissions')
+    def test_successful_oauth_reports_storage_permissions_without_auth_retry_hint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            parent = Path(directory) / 'credentials'
+            parent.mkdir(mode=0o755)
+            parent.chmod(0o755)
+            config = Config(drive_token_file=str(parent / 'token.json'))
+            flow = Mock()
+            flow.run_local_server.return_value = Credentials(
+                'fixture-token', refresh_token='fixture-refresh', client_id='fixture-client',
+                client_secret='fixture-secret', token_uri='https://oauth2.googleapis.com/token')
+            with patch('sys.argv', ['authenticate.py']), \
+                    patch.object(authenticate.Config, 'load', return_value=config), \
+                    patch.object(authenticate.InstalledAppFlow, 'from_client_secrets_file', return_value=flow), \
+                    patch('sys.stderr', new_callable=io.StringIO) as output:
+                self.assertEqual(authenticate.main(), 1)
+            self.assertIn('Credentials obtained but could not be saved', output.getvalue())
+            self.assertIn('chmod 700', output.getvalue())
+            self.assertNotIn('Authentication failed', output.getvalue())
+            self.assertNotIn('fixture-secret', output.getvalue())

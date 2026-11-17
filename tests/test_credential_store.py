@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from google.oauth2.credentials import Credentials
-from piframe.services.credential_store import CredentialStore, CredentialStoreError, LegacyTokenError
+from piframe.services.credential_store import CredentialStore, CredentialStoreError, CredentialPermissionError, LegacyTokenError
 
 
 class TestCredentialStore(unittest.TestCase):
@@ -27,6 +27,19 @@ class TestCredentialStore(unittest.TestCase):
         if os.name == 'posix':
             self.assertEqual(self.store.path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(self.store.path.parent.stat().st_mode & 0o777, 0o700)
+
+    @unittest.skipUnless(os.name == 'posix', 'POSIX permissions')
+    def test_broad_modes_report_matching_repair(self):
+        self.store.save(self.creds)
+        self.store.path.chmod(0o644)
+        with self.assertRaisesRegex(CredentialPermissionError, 'chmod 600'):
+            self.store.load()
+        self.store.path.chmod(0o600)
+        self.store.path.parent.chmod(0o755)
+        with self.assertRaisesRegex(CredentialPermissionError, 'chmod 700'):
+            self.store.load()
+        with self.assertRaisesRegex(CredentialPermissionError, 'chmod 700'):
+            self.store.save(self.creds)
 
     def test_failed_replace_preserves_previous_token_and_cleans_temporary(self):
         self.store.save(self.creds)

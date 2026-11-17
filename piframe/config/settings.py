@@ -60,7 +60,7 @@ class Config:
     snapshot_cache_max_bytes: int = 32 * 1024 * 1024
     snapshot_cache_size: int = 4
     snapshot_cache_ttl: int = 300
-    
+
     # Durable offline checkpoint (private state, no credentials).
     last_photo_enabled: bool = True
     last_photo_file: str = 'state/last-photo.bin'
