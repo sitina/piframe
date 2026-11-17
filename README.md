@@ -509,8 +509,9 @@ python3.11 -c 'import json; print(" ".join(json.load(open("deployment/pi-bookwor
 
 Preparation leaves the running service and its environment alone. Activation
 requires the existing `piframe.service` to run this checkout's `scripts/start.sh`;
-it switches `venv-current` atomically, restarts the service, and checks a real
-photo plus native image/chart processing. Failure restores the previous environment
+it switches `venv-current` atomically, restarts the service, and requires a live Drive
+photo with matching image/metadata hashes plus native image/chart processing.
+An offline checkpoint alone cannot pass activation. Failure restores the previous environment
 and restarts it. Keep the old environment and SD backup until you have checked
 the physical display and a reboot. Rollback changes the environment only, not
 application code, configuration, or OS packages. Neither installation nor hardware

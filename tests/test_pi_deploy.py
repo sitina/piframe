@@ -1,10 +1,12 @@
 import importlib.util
 import json
+import io
+import hashlib
 from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 
 def load(name):
@@ -48,6 +50,21 @@ class TestPiDeploy(unittest.TestCase):
     def test_failed_photo_probe_restores_old_environment(self):
         failure = subprocess.CalledProcessError(1, 'smoke')
         with patch.object(self.module, 'smoke', side_effect=[None, None] + [failure] * 6):
+            with self.assertRaises(subprocess.CalledProcessError):
+                self.activate()
+        self.assertEqual(self.module.CURRENT.resolve(), self.old)
+
+    def test_checkpoint_only_probe_rolls_back_activation(self):
+        probe = load('smoke_pi')
+        def smoke(candidate, live=False):
+            if not live:
+                return
+            response = io.BytesIO(json.dumps({'image_source':'checkpoint'}).encode())
+            try:
+                probe.check_live_photo('http://fixture', opener=Mock(return_value=response))
+            except RuntimeError as error:
+                raise subprocess.CalledProcessError(1, 'checkpoint-only-probe') from error
+        with patch.object(self.module, 'smoke', side_effect=smoke):
             with self.assertRaises(subprocess.CalledProcessError):
                 self.activate()
         self.assertEqual(self.module.CURRENT.resolve(), self.old)
@@ -126,3 +143,24 @@ class TestPiLocks(unittest.TestCase):
                 other = 'trixie' if profile == 'bookworm' else 'bookworm'
                 with self.assertRaisesRegex(ValueError, 'ARMv6 artifact'):
                     module.generate(fetch, other)
+
+
+class TestLivePhotoProbe(unittest.TestCase):
+    def test_live_probe_requires_matching_source_and_hash(self):
+        from PIL import Image
+        probe = load('smoke_pi')
+        data = io.BytesIO()
+        Image.new('RGB', (8, 8)).save(data, 'JPEG')
+        payload = data.getvalue()
+        digest = hashlib.sha256(payload).hexdigest()[:16]
+        metadata = {'image_source':'live', 'image_id':'fixture',
+                    'picture_url':'/random-picture/snapshots/' + 'a' * 32, 'image_hash':digest}
+        for source, expected in [('live', None), ('checkpoint', RuntimeError)]:
+            image = io.BytesIO(payload)
+            image.headers = {'X-Photo-Source':source, 'X-Image-Hash':digest}
+            opener = Mock(side_effect=[io.BytesIO(json.dumps(metadata).encode()), image])
+            if expected:
+                with self.assertRaises(expected):
+                    probe.check_live_photo('http://fixture', opener=opener)
+            else:
+                probe.check_live_photo('http://fixture', opener=opener)

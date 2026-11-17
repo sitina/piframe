@@ -75,6 +75,7 @@ class PreparedImage:
     image_data: io.BytesIO
     image_hash: str
     metadata_info: Optional[Dict[str, Any]] = None
+    source: str = "live"
 
 
 class ImageService(LoggerMixin):
@@ -129,7 +130,7 @@ class ImageService(LoggerMixin):
             if checkpoint is not None:
                 info, data, metadata = checkpoint
                 buffer = io.BytesIO(data)
-                return PreparedImage(info, buffer, self._generate_image_hash(buffer), metadata)
+                return PreparedImage(info, buffer, self._generate_image_hash(buffer), metadata, source="checkpoint")
         except Exception as failure:
             self.logger.warning('Photo checkpoint unavailable (%s)', type(failure).__name__)
         return None
@@ -250,6 +251,7 @@ class ImageService(LoggerMixin):
             # Add synchronization headers
             response.headers['X-Correlation-ID'] = correlation_id
             response.headers['X-Image-Hash'] = prepared.image_hash
+            response.headers['X-Photo-Source'] = prepared.source
 
             if include_metadata:
                 self._publish_snapshot(prepared)
@@ -320,6 +322,7 @@ class ImageService(LoggerMixin):
             snapshot.info, io.BytesIO(snapshot.data), None)
         response.headers['X-Image-Hash'] = snapshot.image_hash
         response.headers['X-Snapshot-ID'] = snapshot.token
+        response.headers['X-Photo-Source'] = snapshot.source
         response.headers['X-Sync-Status'] = 'synchronized'
         response.headers['X-Sync-Age'] = f'{snapshot.age:.1f}'
         return response
@@ -474,6 +477,7 @@ class ImageService(LoggerMixin):
             'dimensions': display.get('dimensions', 'Unknown'),
             'picture_url': f'/random-picture/snapshots/{sync_state.snapshot_id}',
             'image_hash': sync_state.image_hash,
+            'image_source': sync_state.source,
             'sync_timestamp': sync_state.timestamp,
             'image_id': sync_state.image_id,
         }

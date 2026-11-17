@@ -35,6 +35,8 @@ class TestSnapshots(unittest.TestCase):
         for client, metadata, expected in ((a, metadata_a, self.photos[0]), (b, metadata_b, self.photos[1])):
             response = client.get(metadata['picture_url'])
             self.assertEqual(response.data, expected)
+            self.assertEqual(metadata['image_source'], 'live')
+            self.assertEqual(response.headers['X-Photo-Source'], 'live')
             self.assertEqual(response.headers['X-Image-Hash'], metadata['image_hash'])
             self.assertEqual(metadata['image_hash'], hashlib.sha256(expected).hexdigest()[:16])
         self.assertEqual(self.drive.download_file.call_count, 2)

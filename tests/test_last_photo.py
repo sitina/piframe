@@ -113,10 +113,12 @@ class TestLastPhoto(unittest.TestCase):
         app.add_url_rule('/random-picture/snapshots/<token>', view_func=restarted.serve_snapshot)
         client = app.test_client()
         metadata = client.get('/metadata').json
+        self.assertEqual(metadata['image_source'], 'checkpoint')
         response = client.get(metadata['picture_url'])
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, self.data)
         self.assertEqual(response.headers['X-Image-Hash'], self.prepared.image_hash)
+        self.assertEqual(response.headers['X-Photo-Source'], 'checkpoint')
         self.assertEqual(self.store.path.read_bytes(), before)
         with app.test_request_context():
             self.assertEqual(restarted.serve_random_image().status_code, 200)

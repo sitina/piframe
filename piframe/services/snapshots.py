@@ -17,6 +17,7 @@ class ImageSnapshot:
     metadata_json: str
     timestamp: float
     created_monotonic: float
+    source: str = "live"
 
     @property
     def info(self):
@@ -65,7 +66,7 @@ class SnapshotStore:
         snapshot = ImageSnapshot(
             secrets.token_hex(16), prepared.image_data.getvalue(),
             json.dumps(prepared.image_info), json.dumps(prepared.metadata_info or {}),
-            time.time(), time.monotonic())
+            time.time(), time.monotonic(), source=prepared.source)
         if snapshot.size > self.max_bytes:
             raise ValueError('Snapshot exceeds retained byte budget')
         with self._lock:
