@@ -1,0 +1,177 @@
+{
+  "apt_packages": [
+    "libabsl20240722",
+    "libaom3",
+    "libatomic1",
+    "libavif16",
+    "libbrotli1",
+    "libbz2-1.0",
+    "libc6",
+    "libdav1d7",
+    "libdeflate0",
+    "libffi8",
+    "libfreetype6",
+    "libgav1-1",
+    "libgcc-s1",
+    "libgfortran5",
+    "libjbig0",
+    "libjpeg62-turbo",
+    "liblcms2-2",
+    "liblerc4",
+    "liblzma5",
+    "libopenblas0-pthread",
+    "libopenjp2-7",
+    "libpng16-16t64",
+    "librav1e0.7",
+    "libsharpyuv0",
+    "libssl3t64",
+    "libstdc++6",
+    "libsvtav1enc2",
+    "libtiff6",
+    "libwebp7",
+    "libwebpdemux2",
+    "libwebpmux3",
+    "libxau6",
+    "libxcb1",
+    "libxdmcp6",
+    "libyuv0",
+    "libzstd1",
+    "python3.13-venv",
+    "zlib1g"
+  ],
+  "artifacts": {
+    "cffi": {
+      "version": "2.1.1",
+      "url": "https://www.piwheels.org/simple/cffi/cffi-2.1.1-cp313-cp313-linux_armv6l.whl",
+      "sha256": "7306d523fb4ee4a21d774e48880c85b151b3855012e15bc04d4cf764bb247d94",
+      "apt_dependencies": [
+        "libc6",
+        "libffi8",
+        "libgcc-s1"
+      ]
+    },
+    "charset-normalizer": {
+      "version": "3.5.2",
+      "url": "https://www.piwheels.org/simple/charset-normalizer/charset_normalizer-3.5.2-py3-none-any.whl",
+      "sha256": "dd3fabb2e1c233378777d8b917c4c6935ce37a6f98ff17eb10e793e15d97c035",
+      "apt_dependencies": []
+    },
+    "contourpy": {
+      "version": "1.4.0",
+      "url": "https://www.piwheels.org/simple/contourpy/contourpy-1.4.0-cp313-cp313-linux_armv6l.whl",
+      "sha256": "f8b0b27e9fcaea194426c949673f21db0022227af02dab8f38b34e4364ec11f5",
+      "apt_dependencies": [
+        "libc6",
+        "libgcc-s1",
+        "libstdc++6"
+      ]
+    },
+    "cryptography": {
+      "version": "50.0.2",
+      "url": "https://www.piwheels.org/simple/cryptography/cryptography-50.0.2-cp313-abi3-linux_armv6l.whl",
+      "sha256": "9b08d977d819a4aa8c41ab3d6e94cdf89d46000516967aae22c608794ce89ad6",
+      "apt_dependencies": [
+        "libatomic1",
+        "libc6",
+        "libgcc-s1",
+        "libssl3t64",
+        "libzstd1",
+        "zlib1g"
+      ]
+    },
+    "fonttools": {
+      "version": "4.68.0",
+      "url": "https://www.piwheels.org/simple/fonttools/fonttools-4.68.0-py3-none-any.whl",
+      "sha256": "271c2dbeaf51b9ca51fa3fce135b246e6c79907b0d862c9488e8e6559e9edb9f",
+      "apt_dependencies": []
+    },
+    "kiwisolver": {
+      "version": "1.5.1",
+      "url": "https://www.piwheels.org/simple/kiwisolver/kiwisolver-1.5.1-cp313-cp313-linux_armv6l.whl",
+      "sha256": "90db90a49c18335d7646f13b73d684ed6373b34b368e081109a84afcaa3d0bde",
+      "apt_dependencies": [
+        "libc6",
+        "libgcc-s1",
+        "libstdc++6"
+      ]
+    },
+    "markupsafe": {
+      "version": "3.0.4",
+      "url": "https://www.piwheels.org/simple/markupsafe/markupsafe-3.0.4-cp313-cp313-linux_armv6l.whl",
+      "sha256": "c5f8407b5968e520131a92cd1ae37c426d8eb8c3897bacdd45fff84c8da442e3",
+      "apt_dependencies": [
+        "libc6"
+      ]
+    },
+    "matplotlib": {
+      "version": "3.11.2",
+      "url": "https://www.piwheels.org/simple/matplotlib/matplotlib-3.11.2-cp313-cp313-linux_armv6l.whl",
+      "sha256": "a4db105e03515835c9a14f5c31535c290d4202cee49ec8f84ff73059b2da6eb9",
+      "apt_dependencies": [
+        "libc6",
+        "libgcc-s1",
+        "libstdc++6"
+      ]
+    },
+    "numpy": {
+      "version": "2.5.4",
+      "url": "https://www.piwheels.org/simple/numpy/numpy-2.5.4-cp313-cp313-linux_armv6l.whl",
+      "sha256": "9e5fea8608e5e4ef6b832b7180e2b5f71a2b0d0aa34bdc778498314d15c094ce",
+      "apt_dependencies": [
+        "libc6",
+        "libgcc-s1",
+        "libgfortran5",
+        "libopenblas0-pthread",
+        "libstdc++6"
+      ]
+    },
+    "pillow": {
+      "version": "13.0.0",
+      "url": "https://www.piwheels.org/simple/pillow/pillow-13.0.0-cp313-cp313-linux_armv6l.whl",
+      "sha256": "df29f75f2d1ff2caa47e29f4f3ba21490b92c6b212589e272aa3f2ff1619c1bb",
+      "apt_dependencies": [
+        "libabsl20240722",
+        "libaom3",
+        "libatomic1",
+        "libavif16",
+        "libbrotli1",
+        "libbz2-1.0",
+        "libc6",
+        "libdav1d7",
+        "libdeflate0",
+        "libfreetype6",
+        "libgav1-1",
+        "libgcc-s1",
+        "libjbig0",
+        "libjpeg62-turbo",
+        "liblcms2-2",
+        "liblerc4",
+        "liblzma5",
+        "libopenjp2-7",
+        "libpng16-16t64",
+        "librav1e0.7",
+        "libsharpyuv0",
+        "libstdc++6",
+        "libsvtav1enc2",
+        "libtiff6",
+        "libwebp7",
+        "libwebpdemux2",
+        "libwebpmux3",
+        "libxau6",
+        "libxcb1",
+        "libxdmcp6",
+        "libyuv0",
+        "libzstd1",
+        "zlib1g"
+      ]
+    },
+    "protobuf": {
+      "version": "7.36.2",
+      "url": "https://www.piwheels.org/simple/protobuf/protobuf-7.36.2-cp313-cp313-linux_armv6l.whl",
+      "sha256": "6bd02a1bf5d79fd8be6b575f58aee2acfe0906cdc5421827cbd3dee2961bc56e",
+      "apt_dependencies": [
+        "libc6"
+      ]
+    }
+  }
+}
