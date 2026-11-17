@@ -42,6 +42,9 @@ class DriveFixtureTransport:
         elif "/files/fixture-photo?" in uri and "alt=media" in uri:
             data = self.photo
             content_type = "image/jpeg"
+        elif "/files/fixture-photo?" in uri:
+            data = json.dumps({'size': str(len(self.photo))}).encode()
+            content_type = 'application/json'
         else:
             raise AssertionError(f"Unexpected Drive request: {uri}")
         return httplib2.Response({
@@ -89,6 +92,7 @@ class TestEndToEnd(unittest.TestCase):
     def setUp(self):
         reset_cache_manager()
         self.frame = PiFrameApp(Config(
+            last_photo_enabled=False,
             album_id="fixture-album", weather_api_key="fixture-key",
             weather_location="Prague", secret_key="fixture-secret",
             weather_file_fallback="/nonexistent-piframe-fixture-forecast.json",

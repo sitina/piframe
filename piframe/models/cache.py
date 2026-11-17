@@ -4,6 +4,8 @@ Handles all caching logic with TTL, size limits, and cleanup.
 """
 
 import time
+import io
+import math
 import threading
 from typing import Any, Dict, Optional, Union, List, Tuple
 from dataclasses import dataclass
@@ -22,6 +24,7 @@ class CacheEntry:
     ttl: float
     access_count: int = 0
     last_access: float = None
+    retention_ttl: Optional[float] = None
     
     def __post_init__(self):
         if self.last_access is None:
@@ -29,12 +32,15 @@ class CacheEntry:
     
     def is_expired(self) -> bool:
         """Check if this cache entry has expired."""
-        return time.time() - self.timestamp > self.ttl
+        return time.monotonic() - self.timestamp >= self.ttl
     
+    def is_retired(self):
+        return time.monotonic() - self.timestamp >= (self.retention_ttl if self.retention_ttl is not None else self.ttl)
+
     def touch(self) -> None:
         """Update access information."""
         self.access_count += 1
-        self.last_access = time.time()
+        self.last_access = time.monotonic()
 
 
 class TTLCache:
@@ -42,7 +48,7 @@ class TTLCache:
     Thread-safe cache with Time-To-Live (TTL) and size limits.
     """
     
-    def __init__(self, max_size: int = 100, default_ttl: float = 3600):
+    def __init__(self, max_size: int = 100, default_ttl: float = 3600, max_bytes: Optional[int] = None, retention_ttl: Optional[float] = None):
         """
         Initialize cache.
         
@@ -50,6 +56,14 @@ class TTLCache:
             max_size: Maximum number of entries (LRU eviction when exceeded)
             default_ttl: Default TTL in seconds
         """
+        if max_bytes is not None and (isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 0):
+            raise ValueError("Cache byte budget must be a nonnegative integer")
+        for duration in (default_ttl, retention_ttl):
+            if duration is not None and (isinstance(duration, bool) or not isinstance(duration, (int, float)) or
+                                         not math.isfinite(duration) or duration < 0):
+                raise ValueError('Cache durations must be finite and nonnegative')
+        self.retention_ttl = retention_ttl
+        self.max_bytes = max_bytes
         self.max_size = max_size
         self.default_ttl = default_ttl
         self._cache: OrderedDict[str, CacheEntry] = OrderedDict()
@@ -72,9 +86,10 @@ class TTLCache:
             
             entry = self._cache[key]
             
-            if entry.is_expired():
-                logger.debug(f"Cache entry expired: {key}")
+            if entry.is_retired():
                 del self._cache[key]
+                return default
+            if entry.is_expired():
                 return default
             
             # Move to end (most recently used)
@@ -83,6 +98,24 @@ class TTLCache:
             
             return entry.value
     
+    def get_stale(self, key, max_age, default=None):
+        """Explicit fallback read; max_age is total age since successful write."""
+        if (isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or
+                not math.isfinite(max_age) or max_age < 0):
+            raise ValueError('Stale maximum age must be finite and nonnegative')
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                return default
+            if entry.is_retired():
+                del self._cache[key]
+                return default
+            if time.monotonic() - entry.timestamp >= max_age:
+                return default
+            entry.touch()
+            self._cache.move_to_end(key)
+            return entry.value
+
     def set(self, key: str, value: Any, ttl: Optional[float] = None) -> None:
         """
         Set value in cache.
@@ -94,20 +127,40 @@ class TTLCache:
         """
         if ttl is None:
             ttl = self.default_ttl
+        if (isinstance(ttl, bool) or not isinstance(ttl, (int, float)) or
+                not math.isfinite(ttl) or ttl < 0):
+            raise ValueError('Cache TTL must be finite and nonnegative')
         
         with self._lock:
-            timestamp = time.time()
-            entry = CacheEntry(value, timestamp, ttl)
+            if self.max_bytes is not None and self._payload_size(value) > self.max_bytes:
+                self._cache.pop(key, None)
+                return
+            timestamp = time.monotonic()
+            entry = CacheEntry(value, timestamp, ttl, retention_ttl=max(ttl, self.retention_ttl or 0))
             
             self._cache[key] = entry
             self._cache.move_to_end(key)
             
-            # Enforce size limit
-            while len(self._cache) > self.max_size:
+            # Bound both entry count and retained payload bytes.
+            while len(self._cache) > self.max_size or (
+                    self.max_bytes is not None and self._retained_bytes() > self.max_bytes):
                 oldest_key = next(iter(self._cache))
                 logger.debug(f"Evicting cache entry due to size limit: {oldest_key}")
                 del self._cache[oldest_key]
     
+    @staticmethod
+    def _payload_size(value):
+        if isinstance(value, memoryview):
+            return value.nbytes
+        if isinstance(value, (bytes, bytearray)):
+            return len(value)
+        if isinstance(value, io.BytesIO):
+            return value.getbuffer().nbytes
+        return 0
+
+    def _retained_bytes(self):
+        return sum(self._payload_size(entry.value) for entry in self._cache.values())
+
     def delete(self, key: str) -> bool:
         """
         Delete entry from cache.
@@ -138,11 +191,11 @@ class TTLCache:
             Number of entries removed
         """
         with self._lock:
-            current_time = time.time()
+            current_time = time.monotonic()
             expired_keys = []
             
             for key, entry in self._cache.items():
-                if current_time - entry.timestamp > entry.ttl:
+                if entry.is_retired():
                     expired_keys.append(key)
             
             for key in expired_keys:
@@ -157,7 +210,7 @@ class TTLCache:
         """Get cache statistics."""
         with self._lock:
             entries = list(self._cache.values())
-            current_time = time.time()
+            current_time = time.monotonic()
             
             total_entries = len(entries)
             expired_entries = sum(1 for entry in entries if entry.is_expired())
@@ -166,10 +219,13 @@ class TTLCache:
             return {
                 'total_entries': total_entries,
                 'expired_entries': expired_entries,
+                'stale_entries': sum(1 for entry in entries if entry.is_expired() and not entry.is_retired()),
                 'valid_entries': total_entries - expired_entries,
                 'max_size': self.max_size,
                 'total_accesses': total_access_count,
-                'entry_count': len(self._cache)
+                'entry_count': len(self._cache),
+                'retained_bytes': self._retained_bytes(),
+                'max_bytes': self.max_bytes
             }
 
 
@@ -201,7 +257,9 @@ class CacheManager:
         ]
         
         for name, ttl, size in cache_configs:
-            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl)
+            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl,
+                                          max_bytes=config.download_cache_max_bytes if name == "downloads" else None,
+                                          retention_ttl=getattr(config, f"{name}_stale_max_age", None))
         
         logger.info(f"Initialized {len(self._caches)} caches from configuration")
     
@@ -217,7 +275,9 @@ class CacheManager:
         ]
         
         for name, ttl, size in default_configs:
-            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl)
+            self._caches[name] = TTLCache(max_size=size, default_ttl=ttl,
+                                          max_bytes=32 * 1024 * 1024 if name == "downloads" else None,
+                                          retention_ttl={"weather": 3600, "forecast": 10800, "files": 86400}.get(name))
         
         logger.info(f"Initialized {len(self._caches)} caches with defaults")
     
@@ -232,6 +292,10 @@ class CacheManager:
             return cache.get(key, default)
         return default
     
+    def get_stale(self, cache_name, key, max_age, default=None):
+        cache = self.get_cache(cache_name)
+        return cache.get_stale(key, max_age, default) if cache is not None else default
+
     def set(self, cache_name: str, key: str, value: Any, ttl: Optional[float] = None) -> None:
         """Set value in named cache."""
         cache = self.get_cache(cache_name)

@@ -130,6 +130,41 @@ After pulling updates, activate the virtual environment and run
 start without access to the package index.
 
 
+## Existing OAuth tokens
+
+Normal startup never opens a browser or waits for an OAuth callback. For new or
+revoked credentials, explicitly run `python scripts/authenticate.py` on a machine
+with a browser. The callback listens only on loopback and times out after three
+minutes. For SSH setup, forward local port 8085 to the frame's loopback port 8085
+and run the command on the frame with `--no-browser`, then open its printed URL
+in the forwarded browser session. Keep the same Google Drive client credentials.
+Transient refresh failures retain the saved token and require no new login.
+
+Runtime credentials are now JSON in `config/credentials/token.json`, with a
+private directory and owner-only file permissions. Runtime never unpickles data.
+For a legacy token whose origin and integrity you trust, migrate it explicitly:
+
+```bash
+python scripts/migrate_token.py --trust-local-pickle
+```
+
+The command preserves the original pickle and refuses to overwrite an existing
+JSON token. Custom legacy `*.pickle` token paths resolve to a `credentials/`
+JSON sibling directory; pass the matching source/destination to the command.
+Custom JSON destinations must be inside a private directory (0700 on Unix).
+
+## Image resource budgets
+
+Defaults cap a download at 16 MiB, retained download payloads at 32 MiB, an image
+at 24 million pixels, and EXIF input at 1 MiB. JPEG, PNG, GIF, BMP and WebP are
+accepted; unsupported or oversized images are not served. Google file size is
+checked before media download, chunks are at most 1 MiB, and the output buffer
+rejects excess bytes. Concurrent cold reads reuse a completed cached download.
+These limits can be set in config JSON with `max_download_bytes`,
+`download_cache_max_bytes`, `max_image_pixels`, and `max_metadata_bytes`.
+The byte cache budget measures payloads, not Python/process overhead. Metadata
+work is byte-limited; it is not executed in a sandbox with a CPU time limit.
+
 ## Dependency updates
 
 `requirements.in` declares runtime inputs and security minimums;
@@ -415,7 +450,7 @@ piframe/
 ├── config/                         # Configuration files
 │   ├── config.json                 # Main app configuration
 │   ├── client_secret.json          # Google API credentials (gitignored)
-│   ├── token.pickle                # OAuth token (gitignored)
+│   ├── credentials/token.json      # Private OAuth token (gitignored)
 │   └── systemd/                    # Systemd service files
 ├── piframe/                        # Main Python package
 │   ├── config/
@@ -450,3 +485,149 @@ piframe/
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+### Raspberry Pi 1 / ARMv6, Bookworm deployment
+
+Use `requirements-pi-bookworm.txt` for 32-bit Raspberry Pi OS Bookworm and
+CPython 3.11. It retains the universal lock's versions, selects explicit
+[piwheels](https://www.piwheels.org/faq.html) binary artifacts for native packages,
+and requires SHA256 hashes. Pure packages use hashed PyPI wheels. Source builds
+are disabled. This profile does **not** apply to Trixie/Python 3.13 or 64-bit OSes.
+`deployment/pi-bookworm-artifacts.json` records artifact provenance and OS packages.
+Regenerate with `venv/bin/python scripts/lock_pi.py` after changing the universal
+lock, then review the artifact hashes and OS dependencies.
+
+On the Pi, after updating this checkout (preserve your local config/credentials):
+
+```bash
+cd ~/piframe
+python3.11 -c 'import json; print(" ".join(json.load(open("deployment/pi-bookworm-artifacts.json"))["apt_packages"]))'
+# Install exactly the package names printed above with sudo apt install.
+/usr/bin/python3.11 scripts/deploy_pi.py prepare
+# Run the activation command printed only after installation and smoke tests pass.
+```
+
+Preparation leaves the running service and its environment alone. Activation
+requires the existing `piframe.service` to run this checkout's `scripts/start.sh`;
+it switches `venv-current` atomically, restarts the service, and requires a live Drive
+photo with matching image/metadata hashes plus native image/chart processing.
+An offline checkpoint alone cannot pass activation. Failure restores the previous environment
+and restarts it. Keep the old environment and SD backup until you have checked
+the physical display and a reboot. Rollback changes the environment only, not
+application code, configuration, or OS packages. Neither installation nor hardware
+operation is proven by tests on a development Mac; run preparation and activation
+on the Pi before considering this deployment verified.
+
+### Raspberry Pi 1 / ARMv6, Trixie deployment
+
+Use `requirements-pi-trixie.txt` and `deployment/pi-trixie-artifacts.json` on
+32-bit Raspberry Pi OS Trixie with CPython 3.13. The deployment script selects
+the matching lock from the OS version and interpreter, rejecting mismatched
+combinations. Bookworm's CPython 3.11 environment is not a Trixie environment;
+create a new candidate instead of modifying or deleting it.
+
+After the OS upgrade has completed and the Pi has rebooted successfully:
+
+```bash
+cd ~/piframe
+python3.13 --version
+python3.13 -c 'import json; print(" ".join(json.load(open("deployment/pi-trixie-artifacts.json"))["apt_packages"]))'
+# Install exactly the package names printed above with sudo apt install --no-install-recommends.
+/usr/bin/python3.13 scripts/deploy_pi.py prepare
+# Run the activation command printed after all preparation checks pass.
+```
+
+Regenerate this profile with `venv/bin/python scripts/lock_pi.py --profile trixie`.
+The default profile remains Bookworm. Both profiles derive their versions and
+Python markers from `requirements.txt`; native wheels must match the profile's
+CPython ABI and ARMv6 platform. Installation is hash checked and binary only.
+The manifest records the system libraries required by those actual artifacts,
+including Trixie's `t64` package names. Image codecs and their shared libraries
+are needed for headless image processing; no desktop or display server is required.
+
+Activation first checks that the previous environment can still run its native
+smoke test. If the OS migration broke it, normal activation refuses to proceed.
+With a full SD-card backup available, explicitly opt out of environment rollback:
+
+```bash
+/usr/bin/python3.13 scripts/deploy_pi.py activate /absolute/path/printed/by/prepare --allow-no-rollback
+```
+
+With this flag, a failed live check stops the service and retains the candidate
+for diagnosis if no working old environment exists. It cannot roll back the OS.
+Without the flag, a failed activation restores the verified previous environment.
+The existing service must execute `scripts/start.sh`; inspect it using
+`systemctl cat piframe.service`. Keep configuration and Google credentials in place.
+After activation, check `systemctl status piframe.service` and
+`journalctl -u piframe.service -n 80 --no-pager`, exercise the photo and weather
+pages from another computer, then reboot and verify automatic startup.
+Real ARMv6 imports, Google authentication, live weather and reboot behavior must
+be verified on the Pi; development-host tests cannot establish hardware readiness.
+
+### Consistent photo snapshots
+
+Image metadata returns an opaque `/random-picture/snapshots/<token>` URL bound to
+exact image bytes and metadata, even if another viewer selects a different photo
+or Drive changes the source file. Fetching that URL does not call Drive. Retention
+is bounded by `snapshot_cache_size` (4), `snapshot_cache_max_bytes` (32 MiB,
+including serialized metadata), and `snapshot_cache_ttl` (300 seconds). Expired or
+evicted URLs return 404; request new metadata to obtain a new snapshot. Legacy
+synchronized endpoints still serve the latest retained snapshot.
+
+### Browser refresh regression checks
+
+The photo page owns one refresh controller and keeps a decoded photo visible
+through failed or timed-out replacements. Weather HTML and charts refresh from
+memory-only endpoints; the background worker prepares chart updates.
+
+The optional browser suite uses actual templates and JavaScript with fixture
+responses (no Google or weather credentials): install `playwright@1.65.1` into a
+temporary npm prefix, install its Chromium browser, and run
+`NODE_PATH=<prefix>/node_modules node tests/browser/frame.cjs` from the repository.
+Set `PIFRAME_TEST_PYTHON` if the test interpreter is not `venv/bin/python`, and
+`PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing Chromium binary.
+
+### Fresh versus retained cache data
+
+Ordinary cache reads return fresh entries only. Expired weather, forecast, and
+Drive file lists can remain retained for explicit outage fallback, bounded by
+`weather_stale_max_age` (1 hour), `forecast_stale_max_age` (3 hours), and
+`files_stale_max_age` (24 hours). These are total ages since the last successful
+cache write, not extensions renewed on each stale read. Cached-only photo weather
+may use the same bounded fallback. Cleanup removes entries when retention ends;
+entry-count and byte budgets still apply throughout. In-memory ages use a
+monotonic clock so wall-clock adjustments cannot extend their lifetime.
+
+### Offline photo checkpoints
+
+After a valid live photo, the frame periodically checkpoints its bytes and
+metadata to `state/last-photo.bin`. This private directory/file uses modes
+0700/0600. One bounded container is flushed and atomically replaced, so an
+interrupted write preserves the previous checkpoint. SHA256, schema, album ID,
+MIME, byte/pixel limits, and a decoded image frame are checked before reuse.
+No credentials or executable serialized objects are stored in this file.
+
+A fresh process serves a valid checkpoint before contacting Drive, so a stalled
+network cannot block its initial photo. Subsequent refreshes try live data while
+the browser retains the displayed photo. Fallback does not renew the saved timestamp. Defaults:
+
+- `last_photo_enabled`: true; set false to disable disk persistence and reuse.
+- `last_photo_file`: `state/last-photo.bin` (parent directory must be private).
+- `last_photo_max_age`: 604800 seconds (7 days), measured using the system clock.
+- `last_photo_write_interval`: 300 seconds; at most one checkpoint attempt
+  per five minutes per process, limiting SD writes and repeated decoding when
+  storage is unavailable. Storage is checked before image decoding. It may therefore be older
+  than the currently displayed photo.
+
+Corrupt, oversized, expired, future-dated, or different-album checkpoints are
+ignored. Correct system time is required for age checks, especially after an
+offline Pi reboot. The image/metadata budgets also apply to checkpoints. Storage
+failures are logged without interrupting live photo serving. Already displayed
+photos and already-issued snapshot URLs follow their existing browser/retention
+behavior; this age policy controls reading the durable fallback.
+
+Credential permission errors identify the matching `chmod 600` file or
+`chmod 700` directory repair. Ownership/access errors and malformed JSON remain
+storage errors; they do not instruct you to repeat OAuth or overwrite an
+existing token. If OAuth succeeds but saving fails, the setup command reports
+that storage failure separately so you can repair the destination first.

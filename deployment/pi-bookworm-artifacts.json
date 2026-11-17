@@ -1,0 +1,98 @@
+{
+  "apt_packages": [
+    "libatomic1",
+    "libffi8",
+    "libgfortran5",
+    "liblcms2-2",
+    "libopenblas0-pthread",
+    "libopenjp2-7",
+    "libssl3",
+    "libstdc++6",
+    "libwebpdemux2",
+    "libwebpmux3",
+    "python3.11-venv",
+    "raspi-copies-and-fills",
+    "zlib1g"
+  ],
+  "artifacts": {
+    "cffi": {
+      "version": "2.1.1",
+      "url": "https://www.piwheels.org/simple/cffi/cffi-2.1.1-cp311-cp311-linux_armv6l.whl",
+      "sha256": "3e1f9d7d628aad2b57bbdb40d20dbd018eda28d79216b5e98f96d2c4ef09e3a8",
+      "apt_dependencies": []
+    },
+    "charset-normalizer": {
+      "version": "3.5.2",
+      "url": "https://www.piwheels.org/simple/charset-normalizer/charset_normalizer-3.5.2-py3-none-any.whl",
+      "sha256": "dd3fabb2e1c233378777d8b917c4c6935ce37a6f98ff17eb10e793e15d97c035",
+      "apt_dependencies": []
+    },
+    "contourpy": {
+      "version": "1.3.3",
+      "url": "https://www.piwheels.org/simple/contourpy/contourpy-1.3.3-cp311-cp311-linux_armv6l.whl",
+      "sha256": "39ab6a86137541135b4d95a5348c92e035a57472c3eaad34f0bd30e4c1866bfb",
+      "apt_dependencies": [
+        "raspi-copies-and-fills"
+      ]
+    },
+    "cryptography": {
+      "version": "50.0.2",
+      "url": "https://www.piwheels.org/simple/cryptography/cryptography-50.0.2-cp311-abi3-linux_armv6l.whl",
+      "sha256": "4e2744afc5d2e016671f37dcf54e3e340fa91b05a92ad168d7feb6622630a31d",
+      "apt_dependencies": [
+        "libatomic1",
+        "libssl3"
+      ]
+    },
+    "fonttools": {
+      "version": "4.68.0",
+      "url": "https://www.piwheels.org/simple/fonttools/fonttools-4.68.0-py3-none-any.whl",
+      "sha256": "271c2dbeaf51b9ca51fa3fce135b246e6c79907b0d862c9488e8e6559e9edb9f",
+      "apt_dependencies": []
+    },
+    "kiwisolver": {
+      "version": "1.5.1",
+      "url": "https://www.piwheels.org/simple/kiwisolver/kiwisolver-1.5.1-cp311-cp311-linux_armv6l.whl",
+      "sha256": "13362f610517f748fca7c979a085bf018bea488b98a2effd5ad599733907d129",
+      "apt_dependencies": []
+    },
+    "markupsafe": {
+      "version": "3.0.4",
+      "url": "https://www.piwheels.org/simple/markupsafe/markupsafe-3.0.4-cp311-cp311-linux_armv6l.whl",
+      "sha256": "3c7369bbd7be3bf8e85074ee31cf3254f8b4b4c0b2a34d09bc3f17e21e91cb45",
+      "apt_dependencies": []
+    },
+    "matplotlib": {
+      "version": "3.11.2",
+      "url": "https://www.piwheels.org/simple/matplotlib/matplotlib-3.11.2-cp311-cp311-linux_armv6l.whl",
+      "sha256": "6713242788ad8e7425ccd9abd21a0299138bcea2d53e739dd7162926cbffb805",
+      "apt_dependencies": []
+    },
+    "numpy": {
+      "version": "2.4.6",
+      "url": "https://www.piwheels.org/simple/numpy/numpy-2.4.6-cp311-cp311-linux_armv6l.whl",
+      "sha256": "a74f04fb7f02e62d9d2f3c9758a5dab22ebefda6f87d6c703b9f968b06485fbb",
+      "apt_dependencies": [
+        "libgfortran5",
+        "libopenblas0-pthread"
+      ]
+    },
+    "pillow": {
+      "version": "13.0.0",
+      "url": "https://www.piwheels.org/simple/pillow/pillow-13.0.0-cp311-cp311-linux_armv6l.whl",
+      "sha256": "49eb06898ec42888e47c1cf1a97cb64b29af2b5d2773be60db1b1ecbbf92c3a6",
+      "apt_dependencies": [
+        "liblcms2-2",
+        "libopenjp2-7",
+        "libwebpdemux2",
+        "libwebpmux3"
+      ]
+    },
+    "protobuf": {
+      "version": "7.36.2",
+      "url": "https://www.piwheels.org/simple/protobuf/protobuf-7.36.2-cp311-cp311-linux_armv6l.whl",
+      "sha256": "1425890ddf4037dafd733010a3b7943b7ac791f97d2026d1a3a99d01e9d51cb4",
+      "apt_dependencies": []
+    }
+  }
+}

@@ -8,7 +8,7 @@ import logging
 import os
 import secrets
 from typing import Optional, Dict, Any
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 
 
 @dataclass
@@ -18,10 +18,10 @@ class Config:
     # Google Drive settings
     album_id: str = ""
     drive_credentials_file: str = "config/client_secret.json"
-    drive_token_file: str = "config/token.pickle"
+    drive_token_file: str = "config/credentials/token.json"
     
     # Weather settings
-    weather_api_key: str = ""
+    weather_api_key: str = field(default="", repr=False)
     weather_location: str = ""
     weather_lat: float = 50.1267  # Default Prague coordinates
     weather_lon: float = 14.4936
@@ -35,6 +35,11 @@ class Config:
     download_cache_ttl: int = 60      # 1 minute
     metadata_cache_ttl: int = 3600    # 1 hour
     
+    # Maximum total age of retained fallback data, including its fresh lifetime.
+    weather_stale_max_age: int = 3600
+    forecast_stale_max_age: int = 10800
+    files_stale_max_age: int = 86400
+
     # Background task intervals (in seconds)
     background_refresh_interval: int = 300    # 5 minutes
     error_retry_interval: int = 60            # 1 minute
@@ -48,7 +53,20 @@ class Config:
     # Cache sizes
     download_cache_size: int = 5
     metadata_cache_size: int = 20
-    
+    max_download_bytes: int = 16 * 1024 * 1024
+    download_cache_max_bytes: int = 32 * 1024 * 1024
+    max_image_pixels: int = 24_000_000
+    max_metadata_bytes: int = 1024 * 1024
+    snapshot_cache_max_bytes: int = 32 * 1024 * 1024
+    snapshot_cache_size: int = 4
+    snapshot_cache_ttl: int = 300
+
+    # Durable offline checkpoint (private state, no credentials).
+    last_photo_enabled: bool = True
+    last_photo_file: str = 'state/last-photo.bin'
+    last_photo_max_age: int = 7 * 24 * 3600
+    last_photo_write_interval: int = 300
+
     # Server settings
     default_host: str = "0.0.0.0"
     default_port: int = 5001
@@ -58,7 +76,7 @@ class Config:
     log_file: str = "logs/piframe.log"
     
     # Security settings
-    secret_key: str = ""
+    secret_key: str = field(default="", repr=False)
     
     @classmethod
     def load(cls, config_path: str = "config/config.json") -> 'Config':
@@ -217,6 +235,7 @@ class Config:
         """String representation of configuration (hiding sensitive data)."""
         config_copy = self.to_dict()
         # Hide sensitive information
-        if config_copy.get('weather_api_key'):
-            config_copy['weather_api_key'] = '***hidden***'
+        for name in ('weather_api_key', 'secret_key'):
+            if config_copy.get(name):
+                config_copy[name] = '***hidden***'
         return json.dumps(config_copy, indent=2)

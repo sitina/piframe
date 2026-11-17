@@ -3,7 +3,6 @@ Tests for DriveService class from the new modular architecture.
 """
 import unittest
 import io
-import pickle
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock, mock_open
@@ -13,7 +12,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from piframe.services.drive_service import DriveService
+from piframe.services.drive_service import DriveService, AuthenticationRequired, CredentialRefreshUnavailable
 from piframe.config.settings import Config
 from piframe.models.cache import CacheManager
 
@@ -33,6 +32,7 @@ class TestDriveService(unittest.TestCase):
         
         # Mock cache manager
         self.mock_cache_manager = MagicMock(spec=CacheManager)
+        self.mock_cache_manager.get_stale.return_value = None
         
         # Create service with mocked cache
         self.drive_service = DriveService(
@@ -58,73 +58,42 @@ class TestDriveService(unittest.TestCase):
         self.assertIn('image/jpeg', DriveService.IMAGE_MIME_TYPES)
         self.assertIn('image/png', DriveService.IMAGE_MIME_TYPES)
 
-    @patch('os.path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('pickle.load')
-    def test_load_credentials_existing_valid(self, mock_pickle_load, mock_file, mock_exists):
-        """Test loading existing valid credentials."""
-        mock_creds = MagicMock()
-        mock_creds.valid = True
-        mock_pickle_load.return_value = mock_creds
-        
-        result = self.drive_service._load_credentials()
-        
-        self.assertEqual(result, mock_creds)
-        self.assertEqual(self.drive_service._credentials, mock_creds)
-        mock_file.assert_called_with("token.pickle", 'rb')
+    def test_load_credentials_existing_valid(self):
+        creds = MagicMock(valid=True)
+        with patch.object(self.drive_service.credential_store, 'load', return_value=creds):
+            self.assertIs(self.drive_service._load_credentials(), creds)
 
-    @patch('os.path.exists')
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('pickle.load', side_effect=pickle.UnpicklingError("Corrupted"))
-    @patch('os.remove')
-    def test_load_credentials_corrupted_token(self, mock_remove, mock_pickle_load, mock_file, mock_exists):
-        """Test handling corrupted token file."""
-        # Mock token file exists, credentials file exists
-        mock_exists.side_effect = lambda path: path in ["token.pickle", "client_secret.json"]
-        
-        with patch('piframe.services.drive_service.InstalledAppFlow') as mock_flow:
-            mock_creds = MagicMock()
-            mock_creds.valid = True
-            mock_flow_instance = MagicMock()
-            mock_flow_instance.run_local_server.return_value = mock_creds
-            mock_flow.from_client_secrets_file.return_value = mock_flow_instance
-            
-            result = self.drive_service._load_credentials()
-            
-            # Should remove corrupted token file
-            mock_remove.assert_called_with(self.config.drive_token_file)
-            # Should create new credentials
-            self.assertEqual(result, mock_creds)
+    def test_load_credentials_corrupted_token_is_preserved(self):
+        from piframe.services.credential_store import CredentialStoreError
+        with patch.object(self.drive_service.credential_store, 'load',
+                          side_effect=CredentialStoreError('malformed')), \
+             patch('google_auth_oauthlib.flow.InstalledAppFlow') as flow:
+            with self.assertRaises(CredentialStoreError):
+                self.drive_service._load_credentials()
+            flow.from_client_secrets_file.assert_not_called()
 
-    @patch('os.path.exists', return_value=True)
-    @patch('builtins.open', new_callable=mock_open)
-    @patch('pickle.load')
-    def test_load_credentials_expired_with_refresh(self, mock_pickle_load, mock_file, mock_exists):
-        """Test refreshing expired credentials."""
-        mock_creds = MagicMock()
-        mock_creds.valid = False
-        mock_creds.expired = True
-        mock_creds.refresh_token = "refresh_token"
-        mock_pickle_load.return_value = mock_creds
-        
-        with patch('piframe.services.drive_service.Request') as mock_request:
-            # After refresh, credentials become valid
-            def refresh_side_effect(request):
-                mock_creds.valid = True
-            
-            mock_creds.refresh.side_effect = refresh_side_effect
-            
-            result = self.drive_service._load_credentials()
-            
-            self.assertEqual(result, mock_creds)
-            mock_creds.refresh.assert_called_once()
+    def test_permission_failure_preserves_actionable_remedy(self):
+        from piframe.services.credential_store import CredentialPermissionError
+        error = CredentialPermissionError('run chmod 600 fixture-token.json')
+        with patch.object(self.drive_service.credential_store, 'load', side_effect=error):
+            with self.assertRaisesRegex(CredentialPermissionError, 'chmod 600'):
+                self.drive_service._load_credentials()
 
-    @patch('os.path.exists', return_value=False)
-    def test_load_credentials_no_credentials_file(self, mock_exists):
-        """Test handling missing credentials file."""
-        result = self.drive_service._load_credentials()
-        
-        self.assertIsNone(result)
+    def test_load_credentials_expired_with_refresh(self):
+        creds = MagicMock(valid=False, expired=True, refresh_token='fixture')
+        creds.refresh.side_effect = lambda request: setattr(creds, 'valid', True)
+        with patch.object(self.drive_service.credential_store, 'load', return_value=creds), \
+             patch.object(self.drive_service.credential_store, 'save') as save, \
+             patch('piframe.services.drive_service.Request'):
+            self.assertIs(self.drive_service._load_credentials(), creds)
+            creds.refresh.assert_called_once()
+            save.assert_called_once_with(creds)
+
+    def test_load_credentials_no_credentials_file(self):
+        with patch.object(self.drive_service.credential_store, 'load', return_value=None), \
+             patch('os.path.exists', return_value=False):
+            with self.assertRaises(AuthenticationRequired):
+                self.drive_service._load_credentials()
 
     def test_credentials_property(self):
         """Test credentials property caching."""
@@ -135,6 +104,22 @@ class TestDriveService(unittest.TestCase):
         result = self.drive_service.credentials
         
         self.assertEqual(result, mock_creds)
+
+    def test_refresh_failure_never_starts_oauth_or_overwrites_token(self):
+        from google.auth.exceptions import RefreshError
+        for error, expected in [(OSError('offline'), CredentialRefreshUnavailable),
+                                (RefreshError('revoked'), AuthenticationRequired),
+                                (RefreshError('busy', retryable=True), CredentialRefreshUnavailable)]:
+            creds = MagicMock(valid=False, refresh_token='fixture')
+            creds.refresh.side_effect = error
+            with self.subTest(error=type(error).__name__), \
+                 patch.object(self.drive_service.credential_store, 'load', return_value=creds), \
+                 patch.object(self.drive_service.credential_store, 'save') as save, \
+                 patch('google_auth_oauthlib.flow.InstalledAppFlow') as flow:
+                with self.assertRaises(expected):
+                    self.drive_service._load_credentials()
+                save.assert_not_called()
+                flow.from_client_secrets_file.assert_not_called()
 
     @patch('piframe.services.drive_service.build')
     def test_service_property(self, mock_build):
@@ -159,7 +144,7 @@ class TestDriveService(unittest.TestCase):
         counter_lock = threading.Lock()
         start = threading.Barrier(3)
         info = {'id': 'photo', 'name': 'photo.jpg', 'mimeType': 'image/jpeg',
-                'webViewLink': 'fixture-view'}
+                'webViewLink': 'fixture-view', 'size': '13'}
 
         def transport_call(result):
             nonlocal active, maximum
@@ -182,7 +167,7 @@ class TestDriveService(unittest.TestCase):
         self.drive_service._service = api
 
         class Downloader:
-            def __init__(self, buffer, request):
+            def __init__(self, buffer, request, **kwargs):
                 self.buffer = buffer
 
             def next_chunk(self):
@@ -500,62 +485,25 @@ class TestDriveService(unittest.TestCase):
         self.assertEqual(result.read(), cached_bytes)
         self.mock_cache_manager.get.assert_called_with('downloads', 'download_test_file_id')
 
-    @patch('piframe.services.drive_service.build')
-    @patch('piframe.services.drive_service.MediaIoBaseDownload')
-    def test_download_file_success(self, mock_downloader_class, mock_build):
-        """Test successful file download."""
+    def test_download_file_success_and_empty_file(self):
         self.mock_cache_manager.get.return_value = None
-        
-        # Mock service
-        mock_service = MagicMock()
-        mock_request = MagicMock()
-        mock_service.files().get_media.return_value = mock_request
-        mock_build.return_value = mock_service
-        
-        # Mock downloader
-        mock_downloader = MagicMock()
-        mock_downloader.next_chunk.return_value = (None, True)
-        mock_downloader_class.return_value = mock_downloader
-        
-        mock_creds = MagicMock()
-        mock_creds.valid = True
-        self.drive_service._credentials = mock_creds
-        
-        # Mock file data
-        test_data = b'test file data'
-        
-        with patch('io.BytesIO') as mock_bytesio:
-            mock_buffer = MagicMock()
-            mock_buffer.getbuffer().nbytes = len(test_data)
-            mock_buffer.read.return_value = test_data
-            mock_bytesio.return_value = mock_buffer
-            
-            result = self.drive_service.download_file('test_file_id')
-            
-            self.assertIsNotNone(result)
-            mock_service.files().get_media.assert_called_with(fileId='test_file_id')
-
-    @patch('piframe.services.drive_service.build')
-    def test_download_file_empty_file(self, mock_build):
-        """Test downloading empty file."""
-        self.mock_cache_manager.get.return_value = None
-        
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
-        
-        mock_creds = MagicMock()
-        mock_creds.valid = True
-        self.drive_service._credentials = mock_creds
-        
-        with patch('io.BytesIO') as mock_bytesio:
-            mock_buffer = MagicMock()
-            mock_buffer.getbuffer().nbytes = 0  # Empty file
-            mock_bytesio.return_value = mock_buffer
-            
-            with patch('piframe.services.drive_service.MediaIoBaseDownload'):
-                result = self.drive_service.download_file('test_file_id')
-                
-                self.assertIsNone(result)
+        api = MagicMock()
+        api.files.return_value.get.return_value.execute.return_value = {'size': '13'}
+        self.drive_service._service = api
+        for payload in [b'fixture image', b'']:
+            class Downloader:
+                def __init__(self, stream, request, **kwargs):
+                    self.stream = stream
+                def next_chunk(self):
+                    self.stream.write(payload)
+                    return None, True
+            with self.subTest(payload=payload), \
+                 patch('piframe.services.drive_service.MediaIoBaseDownload', Downloader):
+                result = self.drive_service.download_file('photo')
+                if payload:
+                    self.assertEqual(result.getvalue(), payload)
+                else:
+                    self.assertIsNone(result)
 
     def test_should_retry_download(self):
         """Test download retry logic."""

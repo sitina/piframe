@@ -34,6 +34,7 @@ class TestWeatherService(unittest.TestCase):
         
         # Mock cache manager
         self.mock_cache_manager = MagicMock(spec=CacheManager)
+        self.mock_cache_manager.get_stale.return_value = None
         
         # Create service with mocked cache
         self.weather_service = WeatherService(
@@ -91,6 +92,18 @@ class TestWeatherService(unittest.TestCase):
         self.mock_cache_manager.set.assert_called_with('weather', 'current_Prague', mock_weather_data)
         mock_session.get.assert_called_once()
 
+    def test_http_error_does_not_log_api_key(self):
+        from requests import Response
+        response = Response()
+        response.status_code = 401
+        response.url = 'https://example.test/?appid=FAKE_SENTINEL'
+        self.mock_cache_manager.get.return_value = None
+        self.weather_service._session = MagicMock()
+        self.weather_service._session.get.return_value = response
+        with self.assertLogs(self.weather_service.logger, level='ERROR') as logs:
+            self.assertIsNone(self.weather_service.get_current_weather())
+        self.assertNotIn('FAKE_SENTINEL', '\n'.join(logs.output))
+
     def test_get_current_weather_no_api_key(self):
         """Test current weather retrieval without API key."""
         config = Config(weather_api_key="", weather_location="Prague")
@@ -142,14 +155,16 @@ class TestWeatherService(unittest.TestCase):
         
         # Mock cache miss on first call, hit on fallback
         cached_data = {'main': {'temp': 293.15}, 'weather': [{'main': 'Clear'}]}
-        self.mock_cache_manager.get.side_effect = [None, cached_data]
+        self.mock_cache_manager.get.return_value = None
+        self.mock_cache_manager.get_stale.return_value = cached_data
         
         with patch('piframe.services.weather_service.requests.exceptions.RequestException', Exception):
             result = self.weather_service.get_current_weather()
         
         self.assertEqual(result, cached_data)
         # Should be called twice: once for normal cache check, once for fallback
-        self.assertEqual(self.mock_cache_manager.get.call_count, 2)
+        self.assertEqual(self.mock_cache_manager.get.call_count, 1)
+        self.mock_cache_manager.get_stale.assert_called_once()
 
     @patch('piframe.services.weather_service.requests.Session')
     def test_get_forecast_success(self, mock_session_class):
@@ -233,6 +248,22 @@ class TestWeatherService(unittest.TestCase):
         self.assertEqual(self.weather_service.process_forecast_data({}), [])
         self.assertEqual(self.weather_service.process_forecast_data(None), [])
         self.assertEqual(self.weather_service.process_forecast_data({'list': []}), [])
+
+    def test_cached_only_reads_never_fetch_or_open_files(self):
+        self.mock_cache_manager.get.return_value = None
+        with patch('requests.Session', side_effect=AssertionError('network')), \
+             patch('builtins.open', side_effect=AssertionError('file read')):
+            self.assertIsNone(self.weather_service.get_current_weather(cache_only=True))
+            self.assertIsNone(self.weather_service.get_forecast(cache_only=True))
+
+    def test_malformed_forecasts_and_temperatures_are_rejected(self):
+        for value in [None, [], 'bad', {'list': None}, {'list': 12},
+                      {'list': [{'main': {}, 'weather': []}]}]:
+            with self.subTest(value=value):
+                self.assertEqual(self.weather_service.process_forecast_data(value), [])
+        for value in [None, True, '293', float('nan'), float('inf')]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.weather_service.to_celsius(value)
 
     def test_process_forecast_data_invalid_items(self):
         """Test forecast data processing with invalid items."""

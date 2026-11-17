@@ -51,6 +51,19 @@ class TestPiFrameApp(unittest.TestCase):
         if hasattr(self, 'app'):
             self.app.close()
 
+    def test_cached_weather_routes_never_fetch_or_generate(self):
+        self.mock_weather_service.get_current_weather.return_value = None
+        self.app.cache_manager.get.return_value = b'cached-chart'
+        response = self.client.get('/weather/cached-overlay')
+        self.assertEqual(response.status_code, 200)
+        self.mock_weather_service.get_current_weather.assert_called_once_with(cache_only=True)
+        self.mock_weather_service.get_forecast.assert_not_called()
+        self.mock_weather_service.generate_forecast_chart.assert_not_called()
+        chart = self.client.get('/weather/cached-chart.png')
+        self.assertEqual(chart.data, b'cached-chart')
+        self.app.cache_manager.get.return_value = None
+        self.assertEqual(self.client.get('/weather/cached-chart.png').status_code, 404)
+
     def test_init(self):
         """Test PiFrameApp initialization"""
         self.assertIsNotNone(self.app.app)
@@ -213,6 +226,18 @@ class TestPiFrameApp(unittest.TestCase):
             call_kwargs = mock_render.call_args[1]
             self.assertFalse(call_kwargs['weather_available'])
             self.assertEqual(call_kwargs['forecast'], [])
+
+    def test_picture_uses_only_cached_weather_and_isolates_provider_errors(self):
+        self.app.weather_service.get_current_weather.side_effect = RuntimeError('provider failed')
+        response = self.client.get('/picture')
+        self.assertEqual(response.status_code, 200)
+        self.app.weather_service.get_current_weather.assert_called_once_with(cache_only=True)
+
+    def test_picture_isolates_malformed_forecast(self):
+        self.app.weather_service.get_current_weather.return_value = {'main': {}}
+        self.app.weather_service.process_forecast_data.side_effect = IndexError('empty weather')
+        self.assertEqual(self.client.get('/picture').status_code, 200)
+        self.app.weather_service.get_forecast.assert_called_once_with(cache_only=True)
 
     def test_random_picture_route(self):
         """Test random picture route"""

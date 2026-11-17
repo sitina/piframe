@@ -8,13 +8,17 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 
 import exifread
-from PIL import Image
+from ..config import Config
+from ..services.image_processor import ImageProcessor
 
 logger = logging.getLogger(__name__)
 
 
 def extract_image_metadata(image_data: io.BytesIO,
-                          file_created_time: Optional[str] = None) -> Dict[str, Any]:
+                          file_created_time: Optional[str] = None, *,
+                          max_metadata_bytes: int = 1024 * 1024,
+                          max_image_pixels: int = 24_000_000,
+                          max_download_bytes: int = 16 * 1024 * 1024) -> Dict[str, Any]:
     """
     Extract metadata from image data (BytesIO object).
 
@@ -41,18 +45,22 @@ def extract_image_metadata(image_data: io.BytesIO,
         image_data.seek(0)
 
         # Get basic file info
-        metadata['file_size'] = len(image_data.getvalue())
+        metadata['file_size'] = image_data.getbuffer().nbytes
 
         # Use PIL to get basic image info
-        image = Image.open(image_data)
-        metadata['dimensions'] = f"{image.width} x {image.height}"
-        metadata['format'] = image.format
+        processor = ImageProcessor(Config(max_download_bytes=max_download_bytes,
+                                          max_image_pixels=max_image_pixels,
+                                          max_metadata_bytes=max_metadata_bytes))
+        image_format, dimensions = processor.inspect(image_data)
+        metadata['dimensions'] = f"{dimensions[0]} x {dimensions[1]}"
+        metadata['format'] = image_format
 
         # Reset for EXIF reading
         image_data.seek(0)
 
         # Extract EXIF data
-        tags = exifread.process_file(image_data, details=False)
+        tags = exifread.process_file(
+            io.BytesIO(image_data.read(max_metadata_bytes)), details=False)
 
         # Extract date/time information from EXIF
         date_extracted = _extract_exif_datetime(tags, metadata)

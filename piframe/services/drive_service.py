@@ -5,21 +5,31 @@ Handles Drive API authentication, file operations, and caching.
 
 import io
 import os
-import pickle
 import random
 import threading
 import time
 from typing import List, Dict, Any, Optional, Tuple
 
 from google.auth.transport.requests import Request
+from google.auth.exceptions import RefreshError
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+
+from .image_processor import BoundedImageBuffer, ImageRejected
+from .credential_store import CredentialStore, CredentialStoreError, LegacyTokenError
 
 from ..config.settings import Config
 from ..models.cache import CacheManager, get_cache_manager
 from ..utils.logging import LoggerMixin, log_performance
+
+
+class AuthenticationRequired(RuntimeError):
+    """An operator must explicitly authenticate; runtime never opens OAuth UI."""
+
+
+class CredentialRefreshUnavailable(RuntimeError):
+    """A transient provider failure; retain the persisted refresh token."""
 
 
 class DriveService(LoggerMixin):
@@ -55,6 +65,7 @@ class DriveService(LoggerMixin):
         """
         self.config = config
         self.cache_manager = cache_manager or get_cache_manager(config)
+        self.credential_store = CredentialStore(config.drive_token_file)
         self._credentials = None
         self._service = None
         # httplib2 connections cannot be used concurrently by request workers
@@ -91,59 +102,34 @@ class DriveService(LoggerMixin):
             return self._service
     
     def _load_credentials(self) -> Optional[Credentials]:
-        """Load and validate Google Drive credentials."""
-        creds = None
-        
-        # Load existing token
-        if os.path.exists(self.config.drive_token_file):
+        """Load or refresh credentials without interactive authentication."""
+        try:
+            creds = self.credential_store.load()
+        except LegacyTokenError as error:
+            raise AuthenticationRequired('Legacy token requires explicit trusted migration or OAuth setup') from error
+        if creds is None:
+            raise AuthenticationRequired('Run python scripts/authenticate.py before starting the frame')
+        if not creds.valid:
+            if not creds.refresh_token:
+                raise AuthenticationRequired('Credentials have no refresh token; authenticate again')
             try:
-                with open(self.config.drive_token_file, 'rb') as token:
-                    creds = pickle.load(token)
-                    self.logger.debug("Loaded existing credentials from token file")
-            except (EOFError, pickle.UnpicklingError, FileNotFoundError) as e:
-                self.logger.warning(f"Error loading token file: {e}")
-                self.logger.info("Removing corrupted token file")
-                try:
-                    os.remove(self.config.drive_token_file)
-                except OSError:
-                    pass
-                creds = None
-        
-        # Refresh or get new credentials
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
-                try:
-                    self.logger.info("Refreshing expired credentials")
-                    creds.refresh(Request())
-                except Exception as e:
-                    self.logger.error(f"Error refreshing credentials: {e}")
-                    creds = None
-            
-            if not creds:
-                if not os.path.exists(self.config.drive_credentials_file):
-                    self.logger.error(f"Credentials file not found: {self.config.drive_credentials_file}")
-                    return None
-                
-                try:
-                    self.logger.info("Starting OAuth flow for new credentials")
-                    flow = InstalledAppFlow.from_client_secrets_file(
-                        self.config.drive_credentials_file, self.SCOPES)
-                    creds = flow.run_local_server(port=0)
-                except Exception as e:
-                    self.logger.error(f"Error during OAuth flow: {e}")
-                    return None
-            
-            # Save credentials
+                creds.refresh(Request())
+            except RefreshError as error:
+                if error.retryable:
+                    raise CredentialRefreshUnavailable('Credential refresh temporarily unavailable') from error
+                raise AuthenticationRequired('Credentials rejected; authenticate again') from error
+            except Exception as error:
+                raise CredentialRefreshUnavailable('Credential refresh temporarily unavailable') from error
+            if not creds.valid:
+                raise AuthenticationRequired('Refresh did not produce valid credentials')
             try:
-                with open(self.config.drive_token_file, 'wb') as token:
-                    pickle.dump(creds, token)
-                self.logger.info("Credentials saved successfully")
-            except Exception as e:
-                self.logger.error(f"Error saving credentials: {e}")
-        
+                self.credential_store.save(creds)
+            except CredentialStoreError as error:
+                # The valid in-memory token remains useful; do not destroy the old file.
+                self.logger.error('Refreshed credentials could not be persisted: %s', error)
         self._credentials = creds
         return creds
-    
+
     @log_performance
     def list_images_in_folder(self, folder_id: Optional[str] = None,
                             force_refresh: bool = False,
@@ -278,7 +264,7 @@ class DriveService(LoggerMixin):
 
                 self.logger.error(f"Error listing images from Drive: {e}", exc_info=True)
 
-                cached_files = self.cache_manager.get('files', cache_key)
+                cached_files = self.cache_manager.get_stale('files', cache_key, self.config.files_stale_max_age)
                 if cached_files is not None:
                     self.logger.info("Using expired cached file list as fallback")
                     return cached_files
@@ -344,9 +330,14 @@ class DriveService(LoggerMixin):
             Exception: On API errors
         """
         with self._api_lock:
+            metadata = self.service.files().get(fileId=file_id, fields='size').execute()
+            size = metadata.get('size')
+            if not isinstance(size, (str, int)) or isinstance(size, bool) or not 0 < int(size) <= self.config.max_download_bytes:
+                raise ImageRejected('Drive file size is absent or exceeds byte budget')
             request = self.service.files().get_media(fileId=file_id)
-            file_buffer = io.BytesIO()
-            downloader = MediaIoBaseDownload(file_buffer, request)
+            file_buffer = BoundedImageBuffer(self.config.max_download_bytes)
+            downloader = MediaIoBaseDownload(
+                file_buffer, request, chunksize=min(1024 * 1024, self.config.max_download_bytes))
 
             done = False
             while not done:
@@ -381,39 +372,44 @@ class DriveService(LoggerMixin):
         if cached is not None:
             return cached
 
-        retry_delay = 1
+        with self._api_lock:
+            # A waiting cold request reuses the first successful download.
+            cached = self._get_cached_download(file_id, cache_key)
+            if cached is not None:
+                return cached
+            retry_delay = 1
 
-        for attempt in range(max_retries):
-            try:
-                self.logger.info(f"Downloading file {file_id} (attempt {attempt + 1}/{max_retries})")
+            for attempt in range(max_retries):
+                try:
+                    self.logger.info(f"Downloading file {file_id} (attempt {attempt + 1}/{max_retries})")
 
-                file_buffer = self._execute_download(file_id)
+                    file_buffer = self._execute_download(file_id)
 
-                self._cache_download(file_id, file_buffer)
+                    self._cache_download(file_id, file_buffer)
 
-                self.logger.info(f"Successfully downloaded file {file_id}")
-                file_buffer.seek(0)
-                return file_buffer
+                    self.logger.info(f"Successfully downloaded file {file_id}")
+                    file_buffer.seek(0)
+                    return file_buffer
 
-            except Exception as e:
-                error_msg = str(e)
-                self.logger.warning(f"Download attempt {attempt + 1} failed: {error_msg}")
+                except Exception as e:
+                    error_msg = str(e)
+                    self.logger.warning(f"Download attempt {attempt + 1} failed: {error_msg}")
 
-                should_retry, should_reset = self._should_retry_download(error_msg)
+                    should_retry, should_reset = self._should_retry_download(error_msg)
 
-                if should_reset:
-                    self._reset_service()
+                    if should_reset:
+                        self._reset_service()
 
-                if should_retry and attempt < max_retries - 1:
-                    self.logger.info(f"Retrying download in {retry_delay} seconds...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
+                    if should_retry and attempt < max_retries - 1:
+                        self.logger.info(f"Retrying download in {retry_delay} seconds...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 2
+                        continue
 
-                break
+                    break
 
-        self.logger.error(f"Failed to download file {file_id} after {max_retries} attempts")
-        return None
+            self.logger.error(f"Failed to download file {file_id} after {max_retries} attempts")
+            return None
     
     def _reset_service(self) -> None:
         """Reset the Drive service to force new connection."""

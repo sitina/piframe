@@ -1,15 +1,11 @@
 #!/bin/bash
-set -e
-
-if [ ! -d "venv/" ]; then
-  echo "Initialising virtualenv - this is one off"
-  virtualenv -p python3 venv
-  echo "virtualenv initialisation done"
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+if [[ -L venv-current ]]; then
+  exec venv-current/bin/python app.py --host=0.0.0.0 --port=81
 fi
-
-source venv/bin/activate
-
-# Use the new CLI interface for better control
-python app.py --host=0.0.0.0 --port=81
-
-deactivate
+if [[ ! -x venv/bin/python ]]; then
+  echo 'No environment installed. Follow the deployment instructions first.' >&2
+  exit 1
+fi
+exec venv/bin/python app.py --host=0.0.0.0 --port=81

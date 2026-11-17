@@ -83,3 +83,11 @@ $RECYCLE.BIN/
 .directory
 .Trash-*
 .nfs*
+# Private runtime credential state
+config/credentials/
+# Candidate deployment environments and atomic activation links
+.venvs/
+venv-current
+.venv-switch-*
+# Private durable photo checkpoints
+state/

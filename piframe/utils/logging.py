@@ -5,10 +5,33 @@ Replaces scattered print() statements with structured logging.
 
 import functools
 import logging
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Optional
+
+
+_SECRET_FIELDS = r"appid|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|secret[_-]?key|password|token"
+
+
+def redact_secrets(message: str) -> str:
+    """Scrub credentials after interpolation, including exception tracebacks."""
+    message = re.sub(
+        r"(?i)([?&](?:" + _SECRET_FIELDS + r"|key)=)[^&\s#'\")<>]*",
+        r"\1[REDACTED]", message)
+    message = re.sub(
+        r"(?i)([\"']?(?:" + _SECRET_FIELDS + r")[\"']?\s*[:=]\s*)([\"'])(?:\\.|(?!\2)[^\\])*\2",
+        r"\1\2[REDACTED]\2", message, flags=re.DOTALL)
+    message = re.sub(
+        r"""(?i)(\b(?:""" + _SECRET_FIELDS + r""")\s*[:=]\s*)[^\s,;}&"']+""",
+        r"\1[REDACTED]", message)
+    return re.sub(r"(?i)(\bBearer\s+)[^\s'\",;]+", r"\1[REDACTED]", message)
+
+
+class SecretSafeFormatter(logging.Formatter):
+    def format(self, record):
+        return redact_secrets(super().format(record))
 
 
 def setup_logging(
@@ -40,7 +63,7 @@ def setup_logging(
     logger.setLevel(numeric_level)
     
     # Create formatters
-    formatter = logging.Formatter(log_format)
+    formatter = SecretSafeFormatter(log_format)
     
     # File handler
     try:

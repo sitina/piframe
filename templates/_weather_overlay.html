@@ -1,0 +1,11 @@
+{% if weather_available %}
+<div class="infoFrame"><h1>{{ temperature }}°C</h1>FL {{ feels_like }}°C / {{ weather_type }}</div>
+{% if forecast %}
+<div class="weatherFrame"><table><tbody><tr>
+{% for f1 in forecast %}<td style="text-align: center">
+{{ f1['time'] }}<br /><img src="{{ f1['icon'] }}" alt="{{ f1['weather'] }}" width="60%" /><br />
+{{ f1['temp'] }}°C<br />FL&nbsp;{{ f1['feels_like'] }}°C</td>{% endfor %}
+</tr></tbody></table></div>
+{% endif %}
+{% if chart_available %}<div class="forecastFrame"><img src="/weather/cached-chart.png?t={{ chart_version }}" alt="forecast trendline" style="width:100%" /></div>{% endif %}
+{% endif %}

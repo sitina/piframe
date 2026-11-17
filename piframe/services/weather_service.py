@@ -5,6 +5,7 @@ Handles weather API calls, caching, and chart generation.
 
 import io
 import json
+import math
 import os
 import time
 from typing import Optional, Dict, Any, List
@@ -76,7 +77,7 @@ class WeatherService(LoggerMixin):
         return self._session
     
     @log_performance
-    def get_current_weather(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
+    def get_current_weather(self, force_refresh: bool = False, cache_only: bool = False) -> Optional[Dict[str, Any]]:
         """
         Get current weather data with caching.
         
@@ -99,6 +100,9 @@ class WeatherService(LoggerMixin):
                 self.logger.debug("Using cached weather data")
                 return cached_data
         
+        if cache_only:
+            return self.cache_manager.get_stale('weather', cache_key, self.config.weather_stale_max_age)
+
         try:
             url = (
                 f"https://api.openweathermap.org/data/2.5/weather"
@@ -119,19 +123,19 @@ class WeatherService(LoggerMixin):
             return weather_data
             
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Weather API request failed: {e}")
+            self.logger.error("Weather API request failed (%s)", type(e).__name__)
             # Return cached data if available, even if expired
-            cached_data = self.cache_manager.get('weather', cache_key)
+            cached_data = self.cache_manager.get_stale('weather', cache_key, self.config.weather_stale_max_age)
             if cached_data is not None:
                 self.logger.info("Using expired cached weather data as fallback")
                 return cached_data
             return None
         except (ValueError, KeyError) as e:
             self.logger.error(f"Invalid weather API response: {e}")
-            return None
+            return self.cache_manager.get_stale('weather', cache_key, self.config.weather_stale_max_age)
     
     @log_performance
-    def get_forecast(self, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
+    def get_forecast(self, force_refresh: bool = False, cache_only: bool = False) -> Optional[Dict[str, Any]]:
         """
         Get weather forecast data with caching.
         
@@ -150,6 +154,9 @@ class WeatherService(LoggerMixin):
                 self.logger.debug("Using cached forecast data")
                 return cached_data
         
+        if cache_only:
+            return self.cache_manager.get_stale('forecast', cache_key, self.config.forecast_stale_max_age)
+
         # Try file fallback first
         if os.path.exists(self.config.weather_file_fallback):
             try:
@@ -187,19 +194,21 @@ class WeatherService(LoggerMixin):
             return forecast_data
             
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Forecast API request failed: {e}")
+            self.logger.error("Forecast API request failed (%s)", type(e).__name__)
             # Return cached data if available
-            cached_data = self.cache_manager.get('forecast', cache_key)
+            cached_data = self.cache_manager.get_stale('forecast', cache_key, self.config.forecast_stale_max_age)
             if cached_data is not None:
                 self.logger.info("Using expired cached forecast data as fallback")
                 return cached_data
             return None
         except (ValueError, KeyError) as e:
             self.logger.error(f"Invalid forecast API response: {e}")
-            return None
+            return self.cache_manager.get_stale('forecast', cache_key, self.config.forecast_stale_max_age)
     
     def to_celsius(self, kelvin_temp: float) -> float:
         """Convert Kelvin to Celsius."""
+        if isinstance(kelvin_temp, bool) or not isinstance(kelvin_temp, (int, float)) or not math.isfinite(kelvin_temp):
+            raise ValueError("Temperature must be a finite number")
         return round(kelvin_temp - 273.15, 1)
     
     def process_forecast_data(self, forecast_data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -212,7 +221,7 @@ class WeatherService(LoggerMixin):
         Returns:
             List of processed forecast items
         """
-        if not forecast_data or 'list' not in forecast_data:
+        if not isinstance(forecast_data, dict) or not isinstance(forecast_data.get('list'), list):
             return []
         
         result = []
@@ -235,7 +244,7 @@ class WeatherService(LoggerMixin):
                     'icon': icon_path,
                     'time': time_str,
                 })
-            except (KeyError, TypeError, ValueError) as e:
+            except (KeyError, IndexError, TypeError, ValueError) as e:
                 self.logger.warning(f"Error processing forecast item: {e}")
                 continue
         

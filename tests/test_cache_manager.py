@@ -21,7 +21,7 @@ class TestCacheEntry(unittest.TestCase):
     def test_init(self):
         """Test CacheEntry initialization."""
         value = "test_value"
-        timestamp = time.time()
+        timestamp = time.monotonic()
         ttl = 60.0
         
         entry = CacheEntry(value, timestamp, ttl)
@@ -34,28 +34,28 @@ class TestCacheEntry(unittest.TestCase):
 
     def test_post_init_sets_last_access(self):
         """Test that __post_init__ sets last_access if None."""
-        timestamp = time.time()
+        timestamp = time.monotonic()
         entry = CacheEntry("value", timestamp, 60.0, last_access=None)
         
         self.assertEqual(entry.last_access, timestamp)
 
     def test_is_expired_not_expired(self):
         """Test is_expired for non-expired entry."""
-        timestamp = time.time()
+        timestamp = time.monotonic()
         entry = CacheEntry("value", timestamp, 60.0)
         
         self.assertFalse(entry.is_expired())
 
     def test_is_expired_expired(self):
         """Test is_expired for expired entry."""
-        timestamp = time.time() - 120  # 2 minutes ago
+        timestamp = time.monotonic() - 120  # 2 minutes ago
         entry = CacheEntry("value", timestamp, 60.0)  # 1 minute TTL
         
         self.assertTrue(entry.is_expired())
 
     def test_touch_updates_access_info(self):
         """Test touch method updates access count and time."""
-        entry = CacheEntry("value", time.time(), 60.0)
+        entry = CacheEntry("value", time.monotonic(), 60.0)
         original_access_count = entry.access_count
         original_last_access = entry.last_access
         
@@ -341,6 +341,8 @@ class TestCacheManager(unittest.TestCase):
     def test_cleanup_all_expired(self):
         """Test cleanup of expired entries across all caches."""
         # Add entries with short TTLs
+        self.cache_manager.get_cache('weather').retention_ttl = 0
+        self.cache_manager.get_cache('forecast').retention_ttl = 0
         self.cache_manager.set('weather', 'expired', 'value1', ttl=0.01)
         self.cache_manager.set('forecast', 'expired', 'value2', ttl=0.01)
         self.cache_manager.set('weather', 'valid', 'value3', ttl=60)
@@ -507,6 +509,7 @@ class TestCacheIntegration(unittest.TestCase):
         self.assertIsNone(self.cache_manager.get('downloads', 'image_1'))
         
         # Add expiring entries
+        self.cache_manager.get_cache('weather').retention_ttl = 0
         self.cache_manager.set('weather', 'expiring', 'data', ttl=0.01)
         
         # Wait for expiration
