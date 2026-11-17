@@ -517,6 +517,52 @@ application code, configuration, or OS packages. Neither installation nor hardwa
 operation is proven by tests on a development Mac; run preparation and activation
 on the Pi before considering this deployment verified.
 
+### Raspberry Pi 1 / ARMv6, Trixie deployment
+
+Use `requirements-pi-trixie.txt` and `deployment/pi-trixie-artifacts.json` on
+32-bit Raspberry Pi OS Trixie with CPython 3.13. The deployment script selects
+the matching lock from the OS version and interpreter, rejecting mismatched
+combinations. Bookworm's CPython 3.11 environment is not a Trixie environment;
+create a new candidate instead of modifying or deleting it.
+
+After the OS upgrade has completed and the Pi has rebooted successfully:
+
+```bash
+cd ~/piframe
+python3.13 --version
+python3.13 -c 'import json; print(" ".join(json.load(open("deployment/pi-trixie-artifacts.json"))["apt_packages"]))'
+# Install exactly the package names printed above with sudo apt install --no-install-recommends.
+/usr/bin/python3.13 scripts/deploy_pi.py prepare
+# Run the activation command printed after all preparation checks pass.
+```
+
+Regenerate this profile with `venv/bin/python scripts/lock_pi.py --profile trixie`.
+The default profile remains Bookworm. Both profiles derive their versions and
+Python markers from `requirements.txt`; native wheels must match the profile's
+CPython ABI and ARMv6 platform. Installation is hash checked and binary only.
+The manifest records the system libraries required by those actual artifacts,
+including Trixie's `t64` package names. Image codecs and their shared libraries
+are needed for headless image processing; no desktop or display server is required.
+
+Activation first checks that the previous environment can still run its native
+smoke test. If the OS migration broke it, normal activation refuses to proceed.
+With a full SD-card backup available, explicitly opt out of environment rollback:
+
+```bash
+/usr/bin/python3.13 scripts/deploy_pi.py activate /absolute/path/printed/by/prepare --allow-no-rollback
+```
+
+With this flag, a failed live check stops the service and retains the candidate
+for diagnosis if no working old environment exists. It cannot roll back the OS.
+Without the flag, a failed activation restores the verified previous environment.
+The existing service must execute `scripts/start.sh`; inspect it using
+`systemctl cat piframe.service`. Keep configuration and Google credentials in place.
+After activation, check `systemctl status piframe.service` and
+`journalctl -u piframe.service -n 80 --no-pager`, exercise the photo and weather
+pages from another computer, then reboot and verify automatic startup.
+Real ARMv6 imports, Google authentication, live weather and reboot behavior must
+be verified on the Pi; development-host tests cannot establish hardware readiness.
+
 ### Consistent photo snapshots
 
 Image metadata returns an opaque `/random-picture/snapshots/<token>` URL bound to
