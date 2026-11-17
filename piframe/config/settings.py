@@ -35,6 +35,11 @@ class Config:
     download_cache_ttl: int = 60      # 1 minute
     metadata_cache_ttl: int = 3600    # 1 hour
     
+    # Maximum total age of retained fallback data, including its fresh lifetime.
+    weather_stale_max_age: int = 3600
+    forecast_stale_max_age: int = 10800
+    files_stale_max_age: int = 86400
+
     # Background task intervals (in seconds)
     background_refresh_interval: int = 300    # 5 minutes
     error_retry_interval: int = 60            # 1 minute

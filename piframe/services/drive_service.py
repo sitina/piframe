@@ -265,7 +265,7 @@ class DriveService(LoggerMixin):
 
                 self.logger.error(f"Error listing images from Drive: {e}", exc_info=True)
 
-                cached_files = self.cache_manager.get('files', cache_key)
+                cached_files = self.cache_manager.get_stale('files', cache_key, self.config.files_stale_max_age)
                 if cached_files is not None:
                     self.logger.info("Using expired cached file list as fallback")
                     return cached_files

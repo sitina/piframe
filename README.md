@@ -539,3 +539,14 @@ temporary npm prefix, install its Chromium browser, and run
 `NODE_PATH=<prefix>/node_modules node tests/browser/frame.cjs` from the repository.
 Set `PIFRAME_TEST_PYTHON` if the test interpreter is not `venv/bin/python`, and
 `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to use an existing Chromium binary.
+
+### Fresh versus retained cache data
+
+Ordinary cache reads return fresh entries only. Expired weather, forecast, and
+Drive file lists can remain retained for explicit outage fallback, bounded by
+`weather_stale_max_age` (1 hour), `forecast_stale_max_age` (3 hours), and
+`files_stale_max_age` (24 hours). These are total ages since the last successful
+cache write, not extensions renewed on each stale read. Cached-only photo weather
+may use the same bounded fallback. Cleanup removes entries when retention ends;
+entry-count and byte budgets still apply throughout. In-memory ages use a
+monotonic clock so wall-clock adjustments cannot extend their lifetime.

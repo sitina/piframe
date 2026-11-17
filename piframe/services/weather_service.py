@@ -101,7 +101,7 @@ class WeatherService(LoggerMixin):
                 return cached_data
         
         if cache_only:
-            return None
+            return self.cache_manager.get_stale('weather', cache_key, self.config.weather_stale_max_age)
 
         try:
             url = (
@@ -125,14 +125,14 @@ class WeatherService(LoggerMixin):
         except requests.exceptions.RequestException as e:
             self.logger.error("Weather API request failed (%s)", type(e).__name__)
             # Return cached data if available, even if expired
-            cached_data = self.cache_manager.get('weather', cache_key)
+            cached_data = self.cache_manager.get_stale('weather', cache_key, self.config.weather_stale_max_age)
             if cached_data is not None:
                 self.logger.info("Using expired cached weather data as fallback")
                 return cached_data
             return None
         except (ValueError, KeyError) as e:
             self.logger.error(f"Invalid weather API response: {e}")
-            return None
+            return self.cache_manager.get_stale('weather', cache_key, self.config.weather_stale_max_age)
     
     @log_performance
     def get_forecast(self, force_refresh: bool = False, cache_only: bool = False) -> Optional[Dict[str, Any]]:
@@ -155,7 +155,7 @@ class WeatherService(LoggerMixin):
                 return cached_data
         
         if cache_only:
-            return None
+            return self.cache_manager.get_stale('forecast', cache_key, self.config.forecast_stale_max_age)
 
         # Try file fallback first
         if os.path.exists(self.config.weather_file_fallback):
@@ -196,14 +196,14 @@ class WeatherService(LoggerMixin):
         except requests.exceptions.RequestException as e:
             self.logger.error("Forecast API request failed (%s)", type(e).__name__)
             # Return cached data if available
-            cached_data = self.cache_manager.get('forecast', cache_key)
+            cached_data = self.cache_manager.get_stale('forecast', cache_key, self.config.forecast_stale_max_age)
             if cached_data is not None:
                 self.logger.info("Using expired cached forecast data as fallback")
                 return cached_data
             return None
         except (ValueError, KeyError) as e:
             self.logger.error(f"Invalid forecast API response: {e}")
-            return None
+            return self.cache_manager.get_stale('forecast', cache_key, self.config.forecast_stale_max_age)
     
     def to_celsius(self, kelvin_temp: float) -> float:
         """Convert Kelvin to Celsius."""

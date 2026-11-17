@@ -32,6 +32,7 @@ class TestDriveService(unittest.TestCase):
         
         # Mock cache manager
         self.mock_cache_manager = MagicMock(spec=CacheManager)
+        self.mock_cache_manager.get_stale.return_value = None
         
         # Create service with mocked cache
         self.drive_service = DriveService(

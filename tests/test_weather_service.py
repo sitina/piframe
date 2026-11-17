@@ -34,6 +34,7 @@ class TestWeatherService(unittest.TestCase):
         
         # Mock cache manager
         self.mock_cache_manager = MagicMock(spec=CacheManager)
+        self.mock_cache_manager.get_stale.return_value = None
         
         # Create service with mocked cache
         self.weather_service = WeatherService(
@@ -154,14 +155,16 @@ class TestWeatherService(unittest.TestCase):
         
         # Mock cache miss on first call, hit on fallback
         cached_data = {'main': {'temp': 293.15}, 'weather': [{'main': 'Clear'}]}
-        self.mock_cache_manager.get.side_effect = [None, cached_data]
+        self.mock_cache_manager.get.return_value = None
+        self.mock_cache_manager.get_stale.return_value = cached_data
         
         with patch('piframe.services.weather_service.requests.exceptions.RequestException', Exception):
             result = self.weather_service.get_current_weather()
         
         self.assertEqual(result, cached_data)
         # Should be called twice: once for normal cache check, once for fallback
-        self.assertEqual(self.mock_cache_manager.get.call_count, 2)
+        self.assertEqual(self.mock_cache_manager.get.call_count, 1)
+        self.mock_cache_manager.get_stale.assert_called_once()
 
     @patch('piframe.services.weather_service.requests.Session')
     def test_get_forecast_success(self, mock_session_class):
