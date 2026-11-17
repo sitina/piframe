@@ -486,38 +486,6 @@ piframe/
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
-### Copy application files to a remote Pi with SCP
-
-From a terminal on your development computer, run:
-
-```bash
-python3 scripts/deploy_scp.py
-# Override any connection setting as needed:
-python3 scripts/deploy_scp.py --host 192.168.88.241 --user pi --port 22 --destination /home/pi/piframe
-```
-
-Defaults are host `192.168.88.241`, user `pi`, port `22`, and destination
-`/home/pi/piframe`. OpenSSH prompts for the remote account password, with input
-hidden, then reuses that authenticated connection for SSH and SCP. The password
-is never stored or passed as an argument. Normal SSH host-key verification applies.
-The computer needs Python 3, Git, SSH and SCP; the Pi needs SSH/SFTP enabled,
-Python 3.11 or newer, and a destination writable by the selected user.
-
-The script copies Git-tracked files from the current working tree, including local
-edits. Add new application files to Git's index before deploying them. Untracked
-and ignored configuration, credentials, virtual environments, logs and photo
-state are excluded. Existing remote files outside the copied set are preserved;
-local deletions do not delete remote files. Symlinks are refused.
-
-Files are uploaded into a temporary directory first. Identical files are skipped;
-each changed existing file asks `Overwrite ...? [y/N]` before replacement. Only
-`y` or `yes` approves that file; Enter skips it. New files are copied without a
-prompt. The summary reports copied, unchanged and declined files. Each file is
-replaced atomically, but the entire transfer is not an atomic release: aborting
-or declining files can leave a mixture of versions. Dependencies, configuration
-and service activation remain separate steps described below. On a fresh Pi,
-configure its credentials and service before activation.
-
 ### Raspberry Pi 1 / ARMv6, Bookworm deployment
 
 Use `requirements-pi-bookworm.txt` for 32-bit Raspberry Pi OS Bookworm and
