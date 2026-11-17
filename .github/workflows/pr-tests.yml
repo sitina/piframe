@@ -46,8 +46,8 @@ jobs:
         cache_manager = CacheManager(config)
         
         # Test cache operations
-        cache_manager.set('test', 'key', 'value')
-        assert cache_manager.get('test', 'key') == 'value'
+        cache_manager.set('metadata', 'key', 'value')
+        assert cache_manager.get('metadata', 'key') == 'value'
         
         print('✅ Core functionality verified')
         "
